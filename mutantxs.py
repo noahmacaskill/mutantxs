@@ -1,3 +1,5 @@
+from json import loads
+
 """MutantX-S Implementation for EMBER Function Imports
 
 This script contains method stubs to guide Noah's planned
@@ -7,7 +9,32 @@ against COUGAR.
 
 
 def main():
-    print('Hello, world!')
+
+    info_lines = list()
+    import_lines = list()
+
+    file_name = input("Select file name: ")
+
+    with open(file_name, 'r') as f:
+
+        for line in f:
+            json_doc = loads(line)
+
+            md5 = json_doc['md5']
+            imports = json_doc['imports']
+            label = json_doc['label']
+
+            if label == 1:
+                count = 0
+                for library in imports:
+                    for function in imports[library]:
+                        count += 1
+                        import_lines.append((md5, library, function))
+
+                info_lines.append((md5, str(count)))
+
+        convert_function_imports_to_ngrams(info_lines, import_lines)
+
     # md5_to_ngrams = convert_function_imports_to_ngrams(info_list, record_list)
     # md5_to_fvs, int_to_ngram = create_feature_vectors_from_ngrams(md5_to_ngrams)
     # reduce_dimensions_hashing_trick()
@@ -15,7 +42,7 @@ def main():
     # cluster_prototypes()
 
 
-def convert_function_imports_to_ngrams(info_list: list, record_list: list, N: int = 4) -> dict:
+def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: int = 4) -> dict:
     """Converts functions imported by malware samples to N-grams
     representing potential behaviours of those samples.
 
@@ -27,7 +54,7 @@ def convert_function_imports_to_ngrams(info_list: list, record_list: list, N: in
     record_list : list
         A list containing a variable number of tuples per malware
         sample, where tuples are of the form: [MD5, library, function]
-    N : int, optional
+    n : int, optional
         The window size for the N-grams, default 4 (from paper)
 
     Returns
