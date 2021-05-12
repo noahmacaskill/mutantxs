@@ -1,3 +1,4 @@
+import itertools
 from json import loads
 
 """MutantX-S Implementation for EMBER Function Imports
@@ -10,8 +11,8 @@ against COUGAR.
 
 def main():
 
-    info_lines = list()
-    import_lines = list()
+    info_list = list()
+    record_list = list()
 
     file_name = input("Select file name: ")
 
@@ -29,13 +30,12 @@ def main():
                 for library in imports:
                     for function in imports[library]:
                         count += 1
-                        import_lines.append((md5, library, function))
+                        record_list.append((md5, library, function))
 
-                info_lines.append((md5, str(count)))
+                info_list.append((md5, str(count)))
 
-        convert_function_imports_to_ngrams(info_lines, import_lines)
+    md5_to_ngrams = convert_function_imports_to_ngrams(info_list, record_list)
 
-    # md5_to_ngrams = convert_function_imports_to_ngrams(info_list, record_list)
     # md5_to_fvs, int_to_ngram = create_feature_vectors_from_ngrams(md5_to_ngrams)
     # reduce_dimensions_hashing_trick()
     # select_prototypes()
@@ -62,7 +62,19 @@ def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: in
     dict
         a mapping of str to list: MD5 to list of N-grams
     """
-    pass
+
+    import_index = 0
+    n_gram_mapping = dict()
+
+    for sample in info_list:
+        md5 = sample[0]
+        num_imports = sample[1]
+
+        n_gram_mapping[md5] = (list(itertools.combinations(record_list[import_index:import_index+int(num_imports)], n)))
+
+        import_index += int(num_imports)
+
+    return n_gram_mapping
 
 
 def create_feature_vectors_from_ngrams(sample_to_ngrams: dict) -> tuple:
