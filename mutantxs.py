@@ -1,4 +1,3 @@
-import itertools
 from json import loads
 
 """MutantX-S Implementation for EMBER Function Imports
@@ -36,6 +35,8 @@ def main():
 
     md5_to_ngrams = convert_function_imports_to_ngrams(info_list, record_list)
 
+    create_feature_vectors_from_ngrams(md5_to_ngrams)
+
     # md5_to_fvs, int_to_ngram = create_feature_vectors_from_ngrams(md5_to_ngrams)
     # reduce_dimensions_hashing_trick()
     # select_prototypes()
@@ -66,11 +67,13 @@ def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: in
     import_index = 0
     n_gram_mapping = dict()
 
-    for sample in info_list:
-        md5 = sample[0]
-        num_imports = sample[1]
+    for md5, num_imports in info_list:
 
-        n_gram_mapping[md5] = (list(itertools.combinations(record_list[import_index:import_index+int(num_imports)], n)))
+        n_gram_mapping[md5] = list()
+
+        for index in range(import_index, import_index + int(num_imports) - n + 1):
+
+            n_gram_mapping[md5].append(record_list[index:index+n])
 
         import_index += int(num_imports)
 
@@ -93,7 +96,6 @@ def create_feature_vectors_from_ngrams(sample_to_ngrams: dict) -> tuple:
         a mapping of str to list: MD5 to feature vector (list of ints)
         a mapping of int to str: numerical encoding to N-gram
     """
-    pass
 
 
 def reduce_dimensions_hashing_trick():
