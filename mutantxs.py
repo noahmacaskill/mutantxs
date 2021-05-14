@@ -97,6 +97,28 @@ def create_feature_vectors_from_ngrams(sample_to_ngrams: dict) -> tuple:
         a mapping of int to str: numerical encoding to N-gram
     """
 
+    n_gram_encodings = dict()
+    encoding_num = 0
+
+    # Create a unique numerical encoding for each N-gram
+    for n_gram_list in sample_to_ngrams.values():
+        for n_gram in n_gram_list:
+            if n_gram not in n_gram_encodings.values():
+                n_gram_encodings[encoding_num] = n_gram
+                encoding_num += 1
+
+    md5_vector_mapping = dict()
+
+    # Create feature vectors for each malware sample
+    for md5 in sample_to_ngrams.keys():
+        md5_vector_mapping[md5] = [0] * encoding_num
+
+        for encoding in n_gram_encodings.keys():
+            if n_gram_encodings[encoding] in sample_to_ngrams[md5]:
+                md5_vector_mapping[md5][encoding] += 1
+
+    return md5_vector_mapping, n_gram_encodings
+
 
 def reduce_dimensions_hashing_trick():
     # If you want to work forward, look at this class for help:
