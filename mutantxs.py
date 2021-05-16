@@ -14,9 +14,8 @@ def main():
 
     md5_to_ngrams = convert_function_imports_to_ngrams(info_list, record_list)
 
-    create_feature_vectors_from_ngrams(md5_to_ngrams)
+    md5_to_fvs, int_to_ngram = create_feature_vectors_from_ngrams(md5_to_ngrams)
 
-    # md5_to_fvs, int_to_ngram = create_feature_vectors_from_ngrams(md5_to_ngrams)
     # reduce_dimensions_hashing_trick()
     # select_prototypes()
     # cluster_prototypes()
@@ -79,7 +78,7 @@ def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: in
 
         for index in range(import_index, import_index + int(num_imports) - n + 1):
 
-            n_gram_mapping[md5].append(record_list[index:index+n])
+            n_gram_mapping[md5].append(tuple(record_list[index:index+n]))
 
         import_index += int(num_imports)
 
@@ -103,25 +102,25 @@ def create_feature_vectors_from_ngrams(sample_to_ngrams: dict) -> tuple:
         a mapping of int to str: numerical encoding to N-gram
     """
 
-    n_gram_encodings = dict()
-    encoding_num = 0
+    n_grams = set()
 
-    # Create a unique numerical encoding for each N-gram
+    # Create a set of each unique N-gram
     for n_gram_list in sample_to_ngrams.values():
         for n_gram in n_gram_list:
-            if n_gram not in n_gram_encodings.values():
-                n_gram_encodings[encoding_num] = n_gram
-                encoding_num += 1
+            n_grams.add(n_gram)
 
+    # Create a unique numerical encoding for each N-gram
+    n_gram_encodings = {k: v for k, v in zip(range(len(n_grams)), n_grams)}
+
+    # Create feature vectors to represent each sample
+    encodings_reverse_dict = {v: k for k, v in n_gram_encodings.items()}
     md5_vector_mapping = dict()
 
-    # Create feature vectors for each malware sample
-    for md5 in sample_to_ngrams.keys():
-        md5_vector_mapping[md5] = [0] * encoding_num
+    for k, v in sample_to_ngrams.items():
+        md5_vector_mapping[k] = [0] * len(n_gram_encodings)
 
-        for encoding in n_gram_encodings.keys():
-            if n_gram_encodings[encoding] in sample_to_ngrams[md5]:
-                md5_vector_mapping[md5][encoding] += 1
+        for n_gram in v:
+            md5_vector_mapping[k][encodings_reverse_dict[n_gram]] += 1
 
     return md5_vector_mapping, n_gram_encodings
 
