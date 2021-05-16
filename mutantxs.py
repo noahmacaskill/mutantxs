@@ -10,6 +10,19 @@ against COUGAR.
 
 def main():
 
+    info_list, record_list = open_ember_files()
+
+    md5_to_ngrams = convert_function_imports_to_ngrams(info_list, record_list)
+
+    create_feature_vectors_from_ngrams(md5_to_ngrams)
+
+    # md5_to_fvs, int_to_ngram = create_feature_vectors_from_ngrams(md5_to_ngrams)
+    # reduce_dimensions_hashing_trick()
+    # select_prototypes()
+    # cluster_prototypes()
+
+
+def open_ember_files() -> tuple:
     info_list = list()
     record_list = list()
 
@@ -33,14 +46,7 @@ def main():
 
                 info_list.append((md5, str(count)))
 
-    md5_to_ngrams = convert_function_imports_to_ngrams(info_list, record_list)
-
-    create_feature_vectors_from_ngrams(md5_to_ngrams)
-
-    # md5_to_fvs, int_to_ngram = create_feature_vectors_from_ngrams(md5_to_ngrams)
-    # reduce_dimensions_hashing_trick()
-    # select_prototypes()
-    # cluster_prototypes()
+    return info_list, record_list
 
 
 def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: int = 4) -> dict:
@@ -121,9 +127,6 @@ def create_feature_vectors_from_ngrams(sample_to_ngrams: dict) -> tuple:
 
 
 def reduce_dimensions_hashing_trick():
-    # If you want to work forward, look at this class for help:
-    # from sklearn.feature_extraction import FeatureHasher
-    # https://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.FeatureHasher.html
     pass
 
 
