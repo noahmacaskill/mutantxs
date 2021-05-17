@@ -59,7 +59,7 @@ def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: in
         where tuples are of the form (MD5, number of imports)
     record_list : list
         A list containing a variable number of tuples per malware
-        sample, where tuples are of the form: [MD5, library, function]
+        sample, where tuples are of the form: (MD5, library, function)
     n : int, optional
         The window size for the N-grams, default 4 (from paper)
 
@@ -78,7 +78,9 @@ def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: in
 
         for index in range(import_index, import_index + int(num_imports) - n + 1):
 
-            n_gram_mapping[md5].append(tuple(record_list[index:index+n]))
+            n_gram = tuple([record[2].lower() + "," + record[1].lower() for record in record_list[index:index+n]])
+
+            n_gram_mapping[md5].append(n_gram)
 
         import_index += int(num_imports)
 
@@ -102,14 +104,10 @@ def create_feature_vectors_from_ngrams(sample_to_ngrams: dict) -> tuple:
         a mapping of int to str: numerical encoding to N-gram
     """
 
-    n_grams = set()
+    # Create a set of each observed N-gram
+    n_grams = {n_gram for n_gram_list in sample_to_ngrams.values() for n_gram in n_gram_list}
 
-    # Create a set of each unique N-gram
-    for n_gram_list in sample_to_ngrams.values():
-        for n_gram in n_gram_list:
-            n_grams.add(n_gram)
-
-    # Create a unique numerical encoding for each N-gram
+    # Create a unique numerical encoding for each observed N-gram
     n_gram_encodings = {k: v for k, v in zip(range(len(n_grams)), n_grams)}
 
     # Create feature vectors to represent each sample
