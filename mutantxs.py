@@ -1,11 +1,13 @@
-from json import loads
-
 """MutantX-S Implementation for EMBER Function Imports
 
 This script contains method stubs to guide Noah's planned
 implementation of MutantX-S, which aims to be comparable
 against COUGAR.
 """
+from json import loads
+
+from scipy.sparse import csr_matrix
+from sklearn.feature_extraction import FeatureHasher
 
 
 def main():
@@ -123,15 +125,61 @@ def create_feature_vectors_from_ngrams(sample_to_ngrams: dict) -> tuple:
     return md5_vector_mapping, n_gram_encodings
 
 
-def reduce_dimensions_hashing_trick():
+def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
+    """Reduce dimensions to a vector of a fixed-length by
+    applying the hashing trick.
+
+    Look at this class for help:
+    https://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.FeatureHasher.html
+    The input_type should be 'string', and we will need to join the
+    n-gram tuples into a string in a consistent manner so that they
+    can be hashed.
+
+    As well, per the MutantX-S paper: "In case of a collision where
+    two or more N-grams map to the same position, the sum of their
+    counts is used as the value in the new vector."
+    As a result, we probably want to set alternate_sign=False, so
+    that we accumulate error rather than cancelling it.
+
+    Parameters
+    ----------
+    md5_vector_mapping : dict
+        A mapping of str to list: MD5 to feature vector (list of ints)
+
+    Returns
+    -------
+    X : sparse matrix of shape (n_samples, n_features)
+        Feature matrix from hashed n-grams. We may densify this,
+        depending on the memory requirements and ability to calculate
+        Euclidean distance on sparse vectors.
+        https://scikit-learn.org/stable/modules/generated/sklearn.metrics.pairwise_distances.html
+    """
     pass
 
 
-def select_prototypes():
+def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4):
+    """Select prototypes from the matrix of hashed feature vectors.
+    The referenced algorithm for selecting in approximately linear time:
+    http://www.cs.columbia.edu/~verma/classes/uml/ref/clustering_minimize_intercluster_distance_gonzalez.pdf
+
+    Parameters
+    ----------
+    X : sparse matrix of shape (n_samples, n_features)
+        Feature matrix from hashed n-grams
+    Pmax : float
+        "Threshold for distances from data points to their nearest prototypes"
+        default 0.4 (from paper)
+
+    Returns
+    -------
+    (list (?), dict)
+        List of selected prototypes. Perhaps we want to keep using a subset of the sparse matrix though?
+        Mapping of prototypes to datapoints
+    """
     pass
 
 
-def cluster_prototypes():
+def cluster_prototypes(MinD: float = 0.5):
     pass
 
 
