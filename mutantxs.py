@@ -5,9 +5,9 @@ implementation of MutantX-S, which aims to be comparable
 against COUGAR.
 """
 from json import loads
-
 from scipy.sparse import csr_matrix
 from sklearn.feature_extraction import FeatureHasher
+from collections import OrderedDict
 
 
 def main():
@@ -18,7 +18,8 @@ def main():
 
     md5_to_fvs, int_to_ngram = create_feature_vectors_from_ngrams(md5_to_ngrams)
 
-    # reduce_dimensions_hashing_trick()
+    hashed_matrix = reduce_dimensions_hashing_trick(md5_to_fvs)
+
     # select_prototypes()
     # cluster_prototypes()
 
@@ -72,21 +73,21 @@ def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: in
     """
 
     import_index = 0
-    n_gram_mapping = dict()
+    md5_to_ngrams = dict()
 
     for md5, num_imports in info_list:
 
-        n_gram_mapping[md5] = list()
+        md5_to_ngrams[md5] = list()
 
         for index in range(import_index, import_index + int(num_imports) - n + 1):
 
             n_gram = tuple([record[2].lower() + "," + record[1].lower() for record in record_list[index:index+n]])
 
-            n_gram_mapping[md5].append(n_gram)
+            md5_to_ngrams[md5].append(n_gram)
 
         import_index += int(num_imports)
 
-    return n_gram_mapping
+    return md5_to_ngrams
 
 
 def create_feature_vectors_from_ngrams(sample_to_ngrams: dict) -> tuple:
@@ -114,7 +115,7 @@ def create_feature_vectors_from_ngrams(sample_to_ngrams: dict) -> tuple:
 
     # Create feature vectors to represent each sample
     encodings_reverse_dict = {v: k for k, v in n_gram_encodings.items()}
-    md5_vector_mapping = dict()
+    md5_vector_mapping = OrderedDict()
 
     for k, v in sample_to_ngrams.items():
         md5_vector_mapping[k] = [0] * len(n_gram_encodings)
@@ -125,7 +126,7 @@ def create_feature_vectors_from_ngrams(sample_to_ngrams: dict) -> tuple:
     return md5_vector_mapping, n_gram_encodings
 
 
-def reduce_dimensions_hashing_trick(md5_vector_mapping: dict, int_to_ngram: dict) -> csr_matrix:
+def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
     """Reduce dimensions to a vector of a fixed-length by
     applying the hashing trick.
 
@@ -145,8 +146,6 @@ def reduce_dimensions_hashing_trick(md5_vector_mapping: dict, int_to_ngram: dict
     ----------
     md5_vector_mapping : dict
         A mapping of str to list: MD5 to feature vector (list of ints)
-    int_to_ngram: dict
-        A mapping of int to str: numerical encoding to N-gram
 
     Returns
     -------
@@ -157,15 +156,15 @@ def reduce_dimensions_hashing_trick(md5_vector_mapping: dict, int_to_ngram: dict
         https://scikit-learn.org/stable/modules/generated/sklearn.metrics.pairwise_distances.html
     """
 
-    h = FeatureHasher(2**12, alternate_sign=False)
+    h = FeatureHasher(2**12, input_type="string", alternate_sign=False)
 
     fv_matrix = list()
 
     for fv in md5_vector_mapping.values():
 
-        ngram_to_freq = {''.join(int_to_ngram[index]): value for index, value in zip(range(len(fv)), fv)}
+        indices = [str(i) for i in range(len(fv)) if fv[i] > 0]
 
-        fv_matrix.append(ngram_to_freq)
+        fv_matrix.append(indices)
 
     hashed_matrix = h.transform(fv_matrix)
 
