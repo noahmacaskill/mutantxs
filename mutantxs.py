@@ -125,7 +125,7 @@ def create_feature_vectors_from_ngrams(sample_to_ngrams: dict) -> tuple:
     return md5_vector_mapping, n_gram_encodings
 
 
-def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
+def reduce_dimensions_hashing_trick(md5_vector_mapping: dict, int_to_ngram: dict) -> csr_matrix:
     """Reduce dimensions to a vector of a fixed-length by
     applying the hashing trick.
 
@@ -145,6 +145,8 @@ def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
     ----------
     md5_vector_mapping : dict
         A mapping of str to list: MD5 to feature vector (list of ints)
+    int_to_ngram: dict
+        A mapping of int to str: numerical encoding to N-gram
 
     Returns
     -------
@@ -154,7 +156,20 @@ def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
         Euclidean distance on sparse vectors.
         https://scikit-learn.org/stable/modules/generated/sklearn.metrics.pairwise_distances.html
     """
-    pass
+
+    h = FeatureHasher(2**12, alternate_sign=False)
+
+    fv_matrix = list()
+
+    for fv in md5_vector_mapping.values():
+
+        ngram_to_freq = {''.join(int_to_ngram[index]): value for index, value in zip(range(len(fv)), fv)}
+
+        fv_matrix.append(ngram_to_freq)
+
+    hashed_matrix = h.transform(fv_matrix)
+
+    return hashed_matrix
 
 
 def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4):
