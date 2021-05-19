@@ -4,23 +4,25 @@ This script contains method stubs to guide Noah's planned
 implementation of MutantX-S, which aims to be comparable
 against COUGAR.
 """
+import random
 from json import loads
 from scipy.sparse import csr_matrix
 from sklearn.feature_extraction import FeatureHasher
+from sklearn.metrics import pairwise_distances
 from collections import OrderedDict
 
 
 def main():
-
     info_list, record_list = open_ember_files()
 
     md5_to_ngrams = convert_function_imports_to_ngrams(info_list, record_list)
 
     md5_to_fvs, int_to_ngram = create_feature_vectors_from_ngrams(md5_to_ngrams)
 
-    hashed_matrix = reduce_dimensions_hashing_trick(md5_to_fvs)
+    feature_matrix = reduce_dimensions_hashing_trick(md5_to_fvs)
 
-    # select_prototypes()
+    prototypes, protos_to_dps = select_prototypes(feature_matrix)
+
     # cluster_prototypes()
 
 
@@ -80,8 +82,7 @@ def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: in
         md5_to_ngrams[md5] = list()
 
         for index in range(import_index, import_index + int(num_imports) - n + 1):
-
-            n_gram = tuple([record[2].lower() + "," + record[1].lower() for record in record_list[index:index+n]])
+            n_gram = tuple([record[2].lower() + "," + record[1].lower() for record in record_list[index:index + n]])
 
             md5_to_ngrams[md5].append(n_gram)
 
@@ -161,7 +162,6 @@ def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
     fv_matrix = list()
 
     for fv in md5_vector_mapping.values():
-
         indices = [str(i) for i in range(len(fv)) if fv[i] > 0]
 
         fv_matrix.append(indices)
@@ -190,7 +190,58 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4):
         List of selected prototypes. Perhaps we want to keep using a subset of the sparse matrix though?
         Mapping of prototypes to datapoints
     """
-    pass
+
+    prototypes = list()
+    protos_to_dps = dict()
+
+    # Randomly select first prototype
+    prototypes.append(random.randint(0, feature_matrix.get_shape()[0] - 1))
+    protos_to_dps[prototypes[0]] = [dp for dp in range(feature_matrix.get_shape()[0]) if dp != prototypes[0]]
+
+    # Find next prototype by longest distance
+    max_dist = 0
+    proto = int()
+
+    for dp in protos_to_dps[prototypes[0]]:
+        distance = pairwise_distances(feature_matrix.getrow(prototypes[0]), feature_matrix.getrow(dp))[0][0]
+        if distance > max_dist:
+            max_dist = distance
+            proto = dp
+
+    # Find new prototypes until all data points are within radius Pmax of a prototype
+    while max_dist > Pmax and len(prototypes) < feature_matrix.get_shape()[0]:
+        new_proto_dps = list()
+        dps_to_remove = list()
+
+        # Transfer data points closer to new prototype cluster over
+        for p in prototypes:
+            for dp in protos_to_dps[p]:
+                if (pairwise_distances(feature_matrix.getrow(p), feature_matrix.getrow(dp))[0][0] >
+                        pairwise_distances(feature_matrix.getrow(proto), feature_matrix.getrow(dp))[0][0]):
+                    if proto != dp:
+                        new_proto_dps.append(dp)
+
+                    dps_to_remove.append(dp)
+
+            protos_to_dps[p] = [dp for dp in protos_to_dps[p] if dp not in dps_to_remove]
+            dps_to_remove.clear()
+
+        # Create new prototype with corresponding cluster
+        prototypes.append(proto)
+        protos_to_dps[proto] = new_proto_dps
+
+        max_dist = 0
+
+        # Find next potential prototype as datapoint furthest from its current corresponding prototype
+        for p in prototypes:
+            for dp in protos_to_dps[p]:
+                distance = pairwise_distances(feature_matrix.getrow(p), feature_matrix.getrow(dp))[0][0]
+
+                if distance > max_dist:
+                    max_dist = distance
+                    proto = dp
+
+    return prototypes, protos_to_dps
 
 
 def cluster_prototypes(MinD: float = 0.5):
