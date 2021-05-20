@@ -9,8 +9,10 @@ from json import loads
 from scipy.sparse import csr_matrix
 from sklearn.feature_extraction import FeatureHasher
 from sklearn.metrics import pairwise_distances
+from sklearn.preprocessing import normalize
 from collections import OrderedDict
 from numpy import ndarray as np
+from numpy import vstack
 
 
 def main():
@@ -24,7 +26,7 @@ def main():
 
     prototypes, protos_to_dps = select_prototypes(feature_matrix)
 
-    # cluster_prototypes()
+    cluster_prototypes(feature_matrix, prototypes)
 
 
 def open_ember_files() -> tuple:
@@ -200,47 +202,51 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4):
     protos_to_dps[prototypes[0]] = [dp for dp in range(feature_matrix.get_shape()[0]) if dp != prototypes[0]]
 
     # Find next prototype using largest distance
-    distances = pairwise_distances(feature_matrix.getrow(prototypes[0]), feature_matrix)
-    proto = np.argmax(distances)
-    max_dist = np.max(distances)
+    prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(prototypes[0]), feature_matrix), norm="max")
+    next_proto = np.argmax(prototype_distances)
+    max_dist = np.max(prototype_distances)
 
     # Find new prototypes until all data points are within radius Pmax of a prototype
     while max_dist > Pmax and len(prototypes) < feature_matrix.get_shape()[0]:
+        new_proto_distances = normalize(pairwise_distances(feature_matrix.getrow(next_proto), feature_matrix), norm="max")
+        prototype_distances = vstack((prototype_distances, new_proto_distances))
+
         new_proto_dps = list()
         dps_to_remove = list()
 
-        # Transfer data points closer to new prototype cluster over
-        for p in prototypes:
-            for dp in protos_to_dps[p]:
-                if (pairwise_distances(feature_matrix.getrow(p), feature_matrix.getrow(dp))[0][0] >
-                        pairwise_distances(feature_matrix.getrow(proto), feature_matrix.getrow(dp))[0][0]):
-                    if proto != dp:
-                        new_proto_dps.append(dp)
+        for prototype_index in range(len(prototypes)):
 
-                    dps_to_remove.append(dp)
+            prototype = prototypes[prototype_index]
+            for datapoint in protos_to_dps[prototype]:
+                if prototype_distances[prototype_index][datapoint] > prototype_distances[-1][datapoint]:
 
-            protos_to_dps[p] = [dp for dp in protos_to_dps[p] if dp not in dps_to_remove]
+                    if next_proto != datapoint:
+                        new_proto_dps.append(datapoint)
+
+                    dps_to_remove.append(datapoint)
+
+            protos_to_dps[prototype] = [dp for dp in protos_to_dps[prototype] if dp not in dps_to_remove]
             dps_to_remove.clear()
 
         # Create new prototype with corresponding cluster
-        prototypes.append(proto)
-        protos_to_dps[proto] = new_proto_dps
+        prototypes.append(next_proto)
+        protos_to_dps[next_proto] = new_proto_dps
 
         max_dist = 0
 
-        # Find next potential prototype as datapoint furthest from its current corresponding prototype
-        for p in prototypes:
-            for dp in protos_to_dps[p]:
-                distance = pairwise_distances(feature_matrix.getrow(p), feature_matrix.getrow(dp))[0][0]
+        # Calculate next potential prototype as datapoint furthest from its current corresponding prototype
+        for prototype_index in range(len(prototypes)):
+            for datapoint in protos_to_dps[prototypes[prototype_index]]:
+                distance_to_proto = prototype_distances[prototype_index][datapoint]
 
-                if distance > max_dist:
-                    max_dist = distance
-                    proto = dp
+                if distance_to_proto > max_dist:
+                    max_dist = distance_to_proto
+                    next_proto = datapoint
 
     return prototypes, protos_to_dps
 
 
-def cluster_prototypes(MinD: float = 0.5):
+def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float = 0.5):
     pass
 
 
