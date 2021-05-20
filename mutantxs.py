@@ -10,6 +10,7 @@ from scipy.sparse import csr_matrix
 from sklearn.feature_extraction import FeatureHasher
 from sklearn.metrics import pairwise_distances
 from collections import OrderedDict
+from numpy import ndarray as np
 
 
 def main():
@@ -198,15 +199,10 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4):
     prototypes.append(random.randint(0, feature_matrix.get_shape()[0] - 1))
     protos_to_dps[prototypes[0]] = [dp for dp in range(feature_matrix.get_shape()[0]) if dp != prototypes[0]]
 
-    # Find next prototype by longest distance
-    max_dist = 0
-    proto = int()
-
-    for dp in protos_to_dps[prototypes[0]]:
-        distance = pairwise_distances(feature_matrix.getrow(prototypes[0]), feature_matrix.getrow(dp))[0][0]
-        if distance > max_dist:
-            max_dist = distance
-            proto = dp
+    # Find next prototype using largest distance
+    distances = pairwise_distances(feature_matrix.getrow(prototypes[0]), feature_matrix)
+    proto = np.argmax(distances)
+    max_dist = np.max(distances)
 
     # Find new prototypes until all data points are within radius Pmax of a prototype
     while max_dist > Pmax and len(prototypes) < feature_matrix.get_shape()[0]:
