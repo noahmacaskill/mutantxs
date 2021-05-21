@@ -28,6 +28,8 @@ def main():
 
     clustered_prototypes = cluster_prototypes(feature_matrix, prototypes)
 
+    clusters = indices_to_md5s(clustered_prototypes, protos_to_dps, list(md5_to_fvs.keys()))
+
 
 def open_ember_files() -> tuple:
     info_list = list()
@@ -298,6 +300,23 @@ def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float
         min_dist = prototype_to_prototype_distances.min()
 
     return clusters
+
+
+def indices_to_md5s(prototype_clusters: list, protos_to_dps: list, md5s: list) -> list:
+    md5_clusters = list()
+    current_cluster = list()
+
+    for cluster in prototype_clusters:
+        for prototype in cluster:
+            current_cluster.append(md5s[prototype])
+
+            for datapoint in protos_to_dps[prototype]:
+                current_cluster.append(md5s[datapoint])
+
+        md5_clusters.append(current_cluster.copy())
+        current_cluster.clear()
+
+    return md5_clusters
 
 
 if __name__ == '__main__':
