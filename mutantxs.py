@@ -35,25 +35,27 @@ def open_ember_files() -> tuple:
     info_list = list()
     record_list = list()
 
-    file_name = input("Select file name: ")
+    file_names = input("Select file names separated by spaces: ")
 
-    with open(file_name, 'r') as f:
+    for file_name in file_names.split():
 
-        for line in f:
-            json_doc = loads(line)
+        with open(file_name, 'r') as f:
 
-            md5 = json_doc['md5']
-            imports = json_doc['imports']
-            label = json_doc['label']
+            for line in f:
+                json_doc = loads(line)
 
-            if label == 1:
-                count = 0
-                for library in imports:
-                    for function in imports[library]:
-                        count += 1
-                        record_list.append((md5, library, function))
+                md5 = json_doc['md5']
+                imports = json_doc['imports']
+                label = json_doc['label']
 
-                info_list.append((md5, str(count)))
+                if label == 1:
+                    count = 0
+                    for library in imports:
+                        for function in imports[library]:
+                            count += 1
+                            record_list.append((md5, library, function))
+
+                    info_list.append((md5, str(count)))
 
     return info_list, record_list
 
