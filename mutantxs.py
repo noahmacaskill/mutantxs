@@ -6,13 +6,13 @@ against COUGAR.
 """
 import random
 from json import loads
+import numpy as np
+from numpy import vstack
 from scipy.sparse import csr_matrix
 from sklearn.feature_extraction import FeatureHasher
 from sklearn.metrics import pairwise_distances
 from sklearn.preprocessing import normalize
 from collections import OrderedDict
-from numpy import ndarray as np
-from numpy import vstack
 
 
 def main():
@@ -26,7 +26,7 @@ def main():
 
     prototypes, protos_to_dps = select_prototypes(feature_matrix)
 
-    cluster_prototypes(feature_matrix, prototypes)
+    clustered_prototypes = cluster_prototypes(feature_matrix, prototypes)
 
 
 def open_ember_files() -> tuple:
@@ -174,7 +174,7 @@ def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
     return hashed_matrix
 
 
-def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4):
+def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4) -> tuple:
     """Select prototypes from the matrix of hashed feature vectors.
     The referenced algorithm for selecting in approximately linear time:
     http://www.cs.columbia.edu/~verma/classes/uml/ref/clustering_minimize_intercluster_distance_gonzalez.pdf
@@ -246,8 +246,58 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4):
     return prototypes, protos_to_dps
 
 
-def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float = 0.5):
-    pass
+def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float = 0.5) -> list:
+
+    # Sort prototypes for simpler computations
+    prototypes.sort()
+
+    # Initialize clusters as singleton clusters for each prototype
+    clusters = [[prototype] for prototype in prototypes]
+
+    # Construct a distance matrix between prototypes
+    prototype_to_prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(prototypes[0]), feature_matrix), norm="max")
+
+    for prototype in prototypes[1:]:
+        prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(prototype), feature_matrix), norm="max")
+        prototype_to_prototype_distances = vstack((prototype_to_prototype_distances, prototype_distances))
+
+    non_prototype_indices = [index for index in range(len(prototype_to_prototype_distances[0])) if index not in prototypes]
+    prototype_to_prototype_distances = np.delete(prototype_to_prototype_distances, non_prototype_indices, axis=1)
+
+    # Assign all zero distances (prototypes' distances to themselves) from the distance matrix to 2
+    # where 2 is an arbitrary number > MinD
+    prototype_to_prototype_distances[prototype_to_prototype_distances == 0] = 2
+
+    # Compute minimum distance between two prototypes
+    min_dist = prototype_to_prototype_distances.min()
+
+    # Find clusters until the minimum distance between closest clusters is >= MinD
+    while min_dist < MinD:
+        indices = np.where(prototype_to_prototype_distances == min_dist)
+        prototype1 = indices[0][0]
+        prototype2 = indices[1][0]
+
+        cluster_found = False
+        new_cluster = list()
+
+        # Combine prototype1 and prototype2 clusters together
+        for cluster in clusters:
+            if prototypes[prototype1] in cluster or prototypes[prototype2] in cluster:
+                if not cluster_found:
+                    new_cluster = cluster
+                    cluster_found = True
+                else:
+                    for prototype in cluster:
+                        new_cluster.append(prototype)
+                    clusters.remove(cluster)
+
+        # Assign distance between prototype1 and prototype2 to 2 where 2 is an arbitrary number > MinD
+        prototype_to_prototype_distances[prototype1][prototype2] = 2
+        prototype_to_prototype_distances[prototype2][prototype1] = 2
+
+        min_dist = prototype_to_prototype_distances.min()
+
+    return clusters
 
 
 if __name__ == '__main__':
