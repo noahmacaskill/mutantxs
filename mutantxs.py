@@ -24,23 +24,34 @@ def main():
 
     feature_matrix = reduce_dimensions_hashing_trick(md5_to_fvs)
 
-    prototypes, protos_to_dps = select_prototypes(feature_matrix)
+    prototypes, prototypes_to_data_points = select_prototypes(feature_matrix)
 
     clustered_prototypes = cluster_prototypes(feature_matrix, prototypes)
 
-    clusters = indices_to_md5s(clustered_prototypes, protos_to_dps, list(md5_to_fvs.keys()))
+    clusters = indices_to_md5s(clustered_prototypes, prototypes_to_data_points, list(md5_to_fvs.keys()))
 
 
 def open_ember_files() -> tuple:
+    """
+    Import required information from EMBER data
+
+    Returns
+    -------
+    (list, list)
+        list of md5s and their respective number of function imports
+        list of information on each function imports
+    """
     info_list = list()
     record_list = list()
 
     file_names = input("Select file names separated by spaces: ")
 
+    # Import required information from each file
     for file_name in file_names.split():
 
         with open(file_name, 'r') as f:
 
+            # Import required information from each malware sample (lind of file)
             for line in f:
                 json_doc = loads(line)
 
@@ -82,16 +93,17 @@ def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: in
     """
 
     import_index = 0
-    md5_to_ngrams = dict()
+    md5_to_ngrams = OrderedDict()
 
+    # Iterate over function imports for each malware sample, creating N-grams along the way
     for md5, num_imports in info_list:
 
         md5_to_ngrams[md5] = list()
 
         for index in range(import_index, import_index + int(num_imports) - n + 1):
-            n_gram = tuple([record[2].lower() + "," + record[1].lower() for record in record_list[index:index + n]])
+            ngram = tuple([record[2].lower() + "," + record[1].lower() for record in record_list[index:index + n]])
 
-            md5_to_ngrams[md5].append(n_gram)
+            md5_to_ngrams[md5].append(ngram)
 
         import_index += int(num_imports)
 
@@ -116,22 +128,24 @@ def create_feature_vectors_from_ngrams(sample_to_ngrams: dict) -> tuple:
     """
 
     # Create a set of each observed N-gram
-    n_grams = {n_gram for n_gram_list in sample_to_ngrams.values() for n_gram in n_gram_list}
+    ngrams = {ngram for ngram_list in sample_to_ngrams.values() for ngram in ngram_list}
 
     # Create a unique numerical encoding for each observed N-gram
-    n_gram_encodings = {k: v for k, v in zip(range(len(n_grams)), n_grams)}
+    ngram_encodings = {encoding: ngram for encoding, ngram in zip(range(len(ngrams)), ngrams)}
+
+    # Create a reverse dictionary from N-grams to encodings
+    encodings_reverse_dict = {v: k for k, v in ngram_encodings.items()}
 
     # Create feature vectors to represent each sample
-    encodings_reverse_dict = {v: k for k, v in n_gram_encodings.items()}
     md5_vector_mapping = OrderedDict()
 
-    for k, v in sample_to_ngrams.items():
-        md5_vector_mapping[k] = [0] * len(n_gram_encodings)
+    for md5, ngram_list in sample_to_ngrams.items():
+        md5_vector_mapping[md5] = [0] * len(ngram_encodings)
 
-        for n_gram in v:
-            md5_vector_mapping[k][encodings_reverse_dict[n_gram]] += 1
+        for ngram in ngram_list:
+            md5_vector_mapping[md5][encodings_reverse_dict[ngram]] += 1
 
-    return md5_vector_mapping, n_gram_encodings
+    return md5_vector_mapping, ngram_encodings
 
 
 def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
@@ -164,6 +178,7 @@ def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
         https://scikit-learn.org/stable/modules/generated/sklearn.metrics.pairwise_distances.html
     """
 
+    # Hash each feature vector to a smaller dimension using the sklearn feature hasher
     h = FeatureHasher(2**12, input_type="string", alternate_sign=False)
 
     fv_matrix = list()
@@ -199,58 +214,77 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4) -> tuple:
     """
 
     prototypes = list()
-    protos_to_dps = dict()
+    prototypes_to_data_points = dict()
 
     # Randomly select first prototype
     prototypes.append(random.randint(0, feature_matrix.get_shape()[0] - 1))
-    protos_to_dps[prototypes[0]] = [dp for dp in range(feature_matrix.get_shape()[0]) if dp != prototypes[0]]
+    data_points = [data_point for data_point in range(feature_matrix.get_shape()[0]) if data_point != prototypes[0]]
+    prototypes_to_data_points[prototypes[0]] = data_points
 
     # Find next prototype using largest distance
     prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(prototypes[0]), feature_matrix), norm="max")
-    next_proto = np.argmax(prototype_distances)
+    next_prototype = np.argmax(prototype_distances)
     max_dist = np.max(prototype_distances)
 
     # Find new prototypes until all data points are within radius Pmax of a prototype
     while max_dist > Pmax and len(prototypes) < feature_matrix.get_shape()[0]:
-        new_proto_distances = normalize(pairwise_distances(feature_matrix.getrow(next_proto), feature_matrix), norm="max")
-        prototype_distances = vstack((prototype_distances, new_proto_distances))
+        new_prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(next_prototype), feature_matrix), norm="max")
+        prototype_distances = vstack((prototype_distances, new_prototype_distances))
 
-        new_proto_dps = list()
-        dps_to_remove = list()
+        new_prototype_data_points = list()
+        data_points_to_remove = list()
 
+        # Shift data points from current cluster to new prototype cluster if closer
         for prototype_index in range(len(prototypes)):
 
             prototype = prototypes[prototype_index]
-            for datapoint in protos_to_dps[prototype]:
-                if prototype_distances[prototype_index][datapoint] > prototype_distances[-1][datapoint]:
+            for data_point in prototypes_to_data_points[prototype]:
+                if prototype_distances[prototype_index][data_point] > prototype_distances[-1][data_point]:
 
-                    if next_proto != datapoint:
-                        new_proto_dps.append(datapoint)
+                    if next_prototype != data_point:
+                        new_prototype_data_points.append(data_point)
 
-                    dps_to_remove.append(datapoint)
+                    data_points_to_remove.append(data_point)
 
-            protos_to_dps[prototype] = [dp for dp in protos_to_dps[prototype] if dp not in dps_to_remove]
-            dps_to_remove.clear()
+            prototypes_to_data_points[prototype] = [data_point for data_point in prototypes_to_data_points[prototype]
+                                                    if data_point not in data_points_to_remove]
+            data_points_to_remove.clear()
 
         # Create new prototype with corresponding cluster
-        prototypes.append(next_proto)
-        protos_to_dps[next_proto] = new_proto_dps
+        prototypes.append(next_prototype)
+        prototypes_to_data_points[next_prototype] = new_prototype_data_points
 
         max_dist = 0
 
         # Calculate next potential prototype as datapoint furthest from its current corresponding prototype
         for prototype_index in range(len(prototypes)):
-            for datapoint in protos_to_dps[prototypes[prototype_index]]:
-                distance_to_proto = prototype_distances[prototype_index][datapoint]
+            for data_point in prototypes_to_data_points[prototypes[prototype_index]]:
+                distance_to_prototype = prototype_distances[prototype_index][data_point]
 
-                if distance_to_proto > max_dist:
-                    max_dist = distance_to_proto
-                    next_proto = datapoint
+                if distance_to_prototype > max_dist:
+                    max_dist = distance_to_prototype
+                    next_prototype = data_point
 
-    return prototypes, protos_to_dps
+    return prototypes, prototypes_to_data_points
 
 
 def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float = 0.5) -> list:
+    """
+    Clusters prototypes together such that no two prototypes are within a certain threshold of one another
+    Parameters
+    ----------
+    feature_matrix: sparse matrix of shape (n_samples, n_features)
+        Feature matrix from hashed n-grams
+    prototypes: list
+        List of prototype row indices in the feature matrix
+    MinD: float
+        Distance threshold for minimum distance between prototypes of a cluster
+
+    Returns
+    -------
+    list:
+        list of lists representing clusters
+    """
 
     # Sort prototypes for simpler computations
     prototypes.sort()
@@ -304,7 +338,22 @@ def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float
     return clusters
 
 
-def indices_to_md5s(prototype_clusters: list, protos_to_dps: list, md5s: list) -> list:
+def indices_to_md5s(prototype_clusters: list, prototypes_to_data_points: dict, md5s: list) -> list:
+    """
+    Groups clusters together using their original md5s
+    Parameters
+    ----------
+    prototype_clusters: list
+        List of lists representing clustered prototypes
+    prototypes_to_data_points: dict
+        Dict mapping from each prototype to the data points within their cluster
+    md5s:
+        List of all md5s
+
+    Returns
+    -------
+    A list of lists where each inner list contains md5s representing a cluster
+    """
     md5_clusters = list()
     current_cluster = list()
 
@@ -312,8 +361,8 @@ def indices_to_md5s(prototype_clusters: list, protos_to_dps: list, md5s: list) -
         for prototype in cluster:
             current_cluster.append(md5s[prototype])
 
-            for datapoint in protos_to_dps[prototype]:
-                current_cluster.append(md5s[datapoint])
+            for data_point in prototypes_to_data_points[prototype]:
+                current_cluster.append(md5s[data_point])
 
         md5_clusters.append(current_cluster.copy())
         current_cluster.clear()
