@@ -234,18 +234,35 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4) -> tuple:
         new_prototype_data_points = list()
         data_points_to_remove = list()
 
-        # Shift data points from current cluster to new prototype cluster if closer
+        # For each datapoint, determine whether it needs to be shifted to the new prototype, while also
+        # keeping track of that max distance between data points and their closest prototypes to determine
+        # the next potential prototype
+        max_dist = 0
+
         for prototype_index in range(len(prototypes)):
 
             prototype = prototypes[prototype_index]
             for data_point in prototypes_to_data_points[prototype]:
-                if prototype_distances[prototype_index][data_point] > prototype_distances[-1][data_point]:
+                distance_to_current_prototype = prototype_distances[prototype_index][data_point]
+                distance_to_new_prototype = prototype_distances[-1][data_point]
+
+                # If data point is closer to new prototype, move it to new cluster
+                if distance_to_current_prototype > distance_to_new_prototype:
 
                     if next_prototype != data_point:
                         new_prototype_data_points.append(data_point)
 
                     data_points_to_remove.append(data_point)
 
+                    distance_to_current_prototype = distance_to_new_prototype
+
+                # If a new max distance to a datapoint's closest prototype is found
+                # update the max distance and the next potential prototype
+                if distance_to_current_prototype > max_dist:
+                    max_dist = distance_to_current_prototype
+                    next_prototype = data_point
+
+            # Remove data points from current cluster that are being moved to new cluster
             prototypes_to_data_points[prototype] = [data_point for data_point in prototypes_to_data_points[prototype]
                                                     if data_point not in data_points_to_remove]
             data_points_to_remove.clear()
@@ -253,17 +270,6 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4) -> tuple:
         # Create new prototype with corresponding cluster
         prototypes.append(next_prototype)
         prototypes_to_data_points[next_prototype] = new_prototype_data_points
-
-        max_dist = 0
-
-        # Calculate next potential prototype as datapoint furthest from its current corresponding prototype
-        for prototype_index in range(len(prototypes)):
-            for data_point in prototypes_to_data_points[prototypes[prototype_index]]:
-                distance_to_prototype = prototype_distances[prototype_index][data_point]
-
-                if distance_to_prototype > max_dist:
-                    max_dist = distance_to_prototype
-                    next_prototype = data_point
 
     return prototypes, prototypes_to_data_points
 
