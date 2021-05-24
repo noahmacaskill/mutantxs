@@ -6,32 +6,47 @@ against COUGAR.
 """
 import random
 from json import loads
+from sys import argv
+from collections import OrderedDict
+import logging as lg
+
 import numpy as np
 from numpy import vstack
 from scipy.sparse import csr_matrix
 from sklearn.feature_extraction import FeatureHasher
 from sklearn.metrics import pairwise_distances
 from sklearn.preprocessing import normalize
-from collections import OrderedDict
+from tqdm import tqdm
 
 
 def main():
-    info_list, record_list = open_ember_files()
+    file_names = None
+    if len(argv) > 1:
+        file_names = argv[1:]
 
+    info_list, record_list = open_ember_files(file_names)
+
+    lg.info('Loaded records from {} samples, converting to N-Grams...'.format(len(info_list)))
     md5_to_ngrams = convert_function_imports_to_ngrams(info_list, record_list)
 
+    lg.info('Converting to feature vectors...')
     md5_to_fvs, int_to_ngram = create_feature_vectors_from_ngrams(md5_to_ngrams)
 
+    lg.info('Hashing feature vectors...')
     feature_matrix = reduce_dimensions_hashing_trick(md5_to_fvs)
 
+    lg.info('Selecting prototypes...')
     prototypes, prototypes_to_data_points = select_prototypes(feature_matrix)
 
+    lg.info('Clustering {} prototypes...'.format(len(prototypes)))
     clustered_prototypes = cluster_prototypes(feature_matrix, prototypes)
 
+    lg.info('Converting indices back to MD5s...')
     clusters = indices_to_md5s(clustered_prototypes, prototypes_to_data_points, list(md5_to_fvs.keys()))
+    lg.info('Done!')
 
 
-def open_ember_files() -> tuple:
+def open_ember_files(file_names: list = None) -> tuple:
     """
     Import required information from EMBER data
 
@@ -44,11 +59,14 @@ def open_ember_files() -> tuple:
     info_list = list()
     record_list = list()
 
-    file_names = input("Select file names separated by spaces: ")
+    if file_names is None:
+        file_names = input("Select file names separated by spaces: ")
+        file_names = file_names.split()
 
     # Import required information from each file
-    for file_name in file_names.split():
+    for file_name in tqdm(file_names, desc='LoadFiles'):
 
+        lg.info('Loading records from file: {}'.format(file_name))
         with open(file_name, 'r') as f:
 
             # Import required information from each malware sample (lind of file)
@@ -96,7 +114,7 @@ def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: in
     md5_to_ngrams = OrderedDict()
 
     # Iterate over function imports for each malware sample, creating N-grams along the way
-    for md5, num_imports in info_list:
+    for md5, num_imports in tqdm(info_list, desc='MakeN-Grams'):
 
         md5_to_ngrams[md5] = list()
 
@@ -139,7 +157,7 @@ def create_feature_vectors_from_ngrams(sample_to_ngrams: dict) -> tuple:
     # Create feature vectors to represent each sample
     md5_vector_mapping = OrderedDict()
 
-    for md5, ngram_list in sample_to_ngrams.items():
+    for md5, ngram_list in tqdm(sample_to_ngrams.items(), desc='CreateFVs'):
         md5_vector_mapping[md5] = [0] * len(ngram_encodings)
 
         for ngram in ngram_list:
@@ -183,7 +201,7 @@ def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
 
     fv_matrix = list()
 
-    for fv in md5_vector_mapping.values():
+    for fv in tqdm(md5_vector_mapping.values(), desc='BuildStrFVs'):
         indices = [str(i) for i in range(len(fv)) if fv[i] > 0]
 
         fv_matrix.append(indices)
@@ -377,4 +395,9 @@ def indices_to_md5s(prototype_clusters: list, prototypes_to_data_points: dict, m
 
 
 if __name__ == '__main__':
+    lg.basicConfig(
+        format='[%(asctime)s %(filename)s:%(lineno)s - %(funcName)s()] %(message)s',
+        datefmt='%Y/%m/%d %H:%M:%S',
+        level=lg.INFO
+    )
     main()
