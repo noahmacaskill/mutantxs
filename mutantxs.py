@@ -70,8 +70,8 @@ def open_ember_files(file_names: list = None) -> tuple:
         with open(file_name, 'r') as f:
 
             # Import required information from each malware sample (lind of file)
-            for line in range(100):
-                json_doc = loads(f.readline())
+            for line in f:
+                json_doc = loads(line)
 
                 md5 = json_doc['md5']
                 imports = json_doc['imports']
