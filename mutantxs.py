@@ -70,8 +70,8 @@ def open_ember_files(file_names: list = None) -> tuple:
         with open(file_name, 'r') as f:
 
             # Import required information from each malware sample (lind of file)
-            for line in f:
-                json_doc = loads(line)
+            for line in range(100):
+                json_doc = loads(f.readline())
 
                 md5 = json_doc['md5']
                 imports = json_doc['imports']
@@ -241,12 +241,14 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4) -> tuple:
 
     # Find next prototype using largest distance
     prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(prototypes[0]), feature_matrix), norm="max")
-    next_prototype = np.argmax(prototype_distances)
+    next_potential_prototype = np.argmax(prototype_distances)
     max_dist = np.max(prototype_distances)
 
     # Find new prototypes until all data points are within radius Pmax of a prototype
     while max_dist > Pmax and len(prototypes) < feature_matrix.get_shape()[0]:
-        new_prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(next_prototype), feature_matrix), norm="max")
+        new_prototype = next_potential_prototype
+
+        new_prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(new_prototype), feature_matrix), norm="max")
         prototype_distances = vstack((prototype_distances, new_prototype_distances))
 
         new_prototype_data_points = list()
@@ -267,7 +269,7 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4) -> tuple:
                 # If data point is closer to new prototype, move it to new cluster
                 if distance_to_current_prototype > distance_to_new_prototype:
 
-                    if next_prototype != data_point:
+                    if new_prototype != data_point:
                         new_prototype_data_points.append(data_point)
 
                     data_points_to_remove.append(data_point)
@@ -278,7 +280,7 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4) -> tuple:
                 # update the max distance and the next potential prototype
                 if distance_to_current_prototype > max_dist:
                     max_dist = distance_to_current_prototype
-                    next_prototype = data_point
+                    next_potential_prototype = data_point
 
             # Remove data points from current cluster that are being moved to new cluster
             prototypes_to_data_points[prototype] = [data_point for data_point in prototypes_to_data_points[prototype]
@@ -286,8 +288,9 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4) -> tuple:
             data_points_to_remove.clear()
 
         # Create new prototype with corresponding cluster
-        prototypes.append(next_prototype)
-        prototypes_to_data_points[next_prototype] = new_prototype_data_points
+        prototypes.append(new_prototype)
+
+        prototypes_to_data_points[new_prototype] = new_prototype_data_points
 
     return prototypes, prototypes_to_data_points
 
