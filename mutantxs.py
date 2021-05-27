@@ -7,14 +7,14 @@ against COUGAR.
 import random
 from json import loads
 from sys import argv
-from collections import OrderedDict
+from collections import OrderedDict, Counter
 import logging as lg
 
 import numpy as np
 from numpy import vstack
 from scipy.sparse import csr_matrix
 from sklearn.feature_extraction import FeatureHasher
-from sklearn.metrics import pairwise_distances
+from sklearn.metrics import pairwise_distances, f1_score, homogeneity_completeness_v_measure, precision_recall_fscore_support
 from sklearn.preprocessing import normalize
 from tqdm import tqdm
 
@@ -24,7 +24,7 @@ def main():
     if len(argv) > 1:
         file_names = argv[1:]
 
-    info_list, record_list = open_ember_files(file_names)
+    info_list, record_list, md5_to_avclass = open_ember_files(file_names)
 
     lg.info('Loaded records from {} samples, converting to N-Grams...'.format(len(info_list)))
     md5_to_ngrams = convert_function_imports_to_ngrams(info_list, record_list)
@@ -43,6 +43,9 @@ def main():
 
     lg.info('Converting indices back to MD5s...')
     clusters = indices_to_md5s(clustered_prototypes, prototypes_to_data_points, list(md5_to_fvs.keys()))
+
+    lg.info('Scoring clustering...')
+    score_clustering(clusters, md5_to_avclass)
     lg.info('Done!')
 
 
@@ -53,11 +56,21 @@ def open_ember_files(file_names: list = None) -> tuple:
     Returns
     -------
     (list, list)
-        list of md5s and their respective number of function imports
+        list of md5s, their respective number of function imports, and their AVClass labeling
         list of information on each function imports
     """
+
+    md5_file = open("10K.md5", 'r')
+    md5s = list()
+
+    for line in md5_file:
+        md5s.append(line[:-1])
+
+    md5_file.close()
+
     info_list = list()
     record_list = list()
+    md5_to_avclass = dict()
 
     if file_names is None:
         file_names = input("Select file names separated by spaces: ")
@@ -74,10 +87,12 @@ def open_ember_files(file_names: list = None) -> tuple:
                 json_doc = loads(line)
 
                 md5 = json_doc['md5']
-                imports = json_doc['imports']
-                label = json_doc['label']
 
-                if label == 1:
+                if md5 in md5s:
+
+                    imports = json_doc['imports']
+                    avclass = json_doc['avclass']
+
                     count = 0
                     for library in imports:
                         for function in imports[library]:
@@ -85,8 +100,9 @@ def open_ember_files(file_names: list = None) -> tuple:
                             record_list.append((md5, library, function))
 
                     info_list.append((md5, str(count)))
+                    md5_to_avclass[md5] = avclass
 
-    return info_list, record_list
+    return info_list, record_list, md5_to_avclass
 
 
 def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: int = 4) -> dict:
@@ -395,6 +411,33 @@ def indices_to_md5s(prototype_clusters: list, prototypes_to_data_points: dict, m
         current_cluster.clear()
 
     return md5_clusters
+
+
+def score_clustering(clusters: list, md5_to_avclass: dict):
+
+    md5_to_pred_label = dict()
+
+    # Assign cluster label as most common avclass labelling in cluster
+    for cluster in clusters:
+        classes = [md5_to_avclass[md5] for md5 in cluster]
+
+        class_count = Counter(classes)
+        cluster_label = class_count.most_common(1)[0][0]
+
+        for md5 in cluster:
+            md5_to_pred_label[md5] = cluster_label
+
+    y_true = list()
+    y_pred = list()
+
+    for md5 in md5_to_pred_label.keys():
+        y_true.append(md5_to_avclass[md5])
+        y_pred.append(md5_to_pred_label[md5])
+
+    precision, recall, fscore_macro, _ = precision_recall_fscore_support(y_true=y_true, y_pred=y_pred, average='macro')
+    fscore_micro = f1_score(y_true=y_true, y_pred=y_pred, average='micro')
+    fscore_weighted = f1_score(y_true=y_true, y_pred=y_pred, average='weighted')
+    homogeneity, completeness, v_measure = homogeneity_completeness_v_measure(labels_true=y_true, labels_pred=y_pred)
 
 
 if __name__ == '__main__':
