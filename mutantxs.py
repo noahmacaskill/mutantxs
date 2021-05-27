@@ -42,10 +42,11 @@ def main():
     clustered_prototypes = cluster_prototypes(feature_matrix, prototypes)
 
     lg.info('Converting indices back to MD5s...')
-    clusters = indices_to_md5s(clustered_prototypes, prototypes_to_data_points, list(md5_to_fvs.keys()))
+    md5_clusters, md5_prototype_clusters = indices_to_md5s(clustered_prototypes, prototypes_to_data_points, list(md5_to_fvs.keys()))
 
     lg.info('Scoring clustering...')
-    score_clustering(clusters, md5_to_avclass)
+    precision, recall, fscore_macro, fscore_micro, fscore_weighted, homogeneity, completeness, v_measure = \
+        score_clustering(md5_clusters, md5_prototype_clusters, md5_to_avclass)
     lg.info('Done!')
 
 
@@ -381,7 +382,7 @@ def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float
     return clusters
 
 
-def indices_to_md5s(prototype_clusters: list, prototypes_to_data_points: dict, md5s: list) -> list:
+def indices_to_md5s(prototype_clusters: list, prototypes_to_data_points: dict, md5s: list) -> tuple:
     """
     Groups clusters together using their original md5s
     Parameters
@@ -395,14 +396,20 @@ def indices_to_md5s(prototype_clusters: list, prototypes_to_data_points: dict, m
 
     Returns
     -------
-    A list of lists where each inner list contains md5s representing a cluster
+    (List, List)
+        A list of lists where each inner list contains md5s representing a cluster
+        A list of lists where each inner lists contains md5s representing prototypes within a cluster
     """
     md5_clusters = list()
     current_cluster = list()
 
+    md5_prototype_clusters = list()
+    current_prototype_cluster = list()
+
     for cluster in prototype_clusters:
         for prototype in cluster:
             current_cluster.append(md5s[prototype])
+            current_prototype_cluster.append(md5s[prototype])
 
             for data_point in prototypes_to_data_points[prototype]:
                 current_cluster.append(md5s[data_point])
@@ -410,34 +417,51 @@ def indices_to_md5s(prototype_clusters: list, prototypes_to_data_points: dict, m
         md5_clusters.append(current_cluster.copy())
         current_cluster.clear()
 
-    return md5_clusters
+        md5_prototype_clusters.append(current_prototype_cluster.copy())
+        current_prototype_cluster.clear()
+
+    return md5_clusters, md5_prototype_clusters
 
 
-def score_clustering(clusters: list, md5_to_avclass: dict):
+def score_clustering(clusters: list, prototype_clusters: list, md5_to_avclass: dict):
+    """
+    Scores clustering by various metrics (precision, recall, F-scores, homogeneity, completeness, V-Measure)
+    Parameters
+    ----------
+    clusters
+        List of lists of md5s, where each inner list represents a cluster
+    prototype_clusters: list
+        List of lists of md5s, where each inner list represents a cluster of prototypes
+    md5_to_avclass: dict
+        Mapping from md5s to AVClass labels attributed to each malware sample
 
-    md5_to_pred_label = dict()
-
-    # Assign cluster label as most common avclass labelling in cluster
-    for cluster in clusters:
-        classes = [md5_to_avclass[md5] for md5 in cluster]
-
-        class_count = Counter(classes)
-        cluster_label = class_count.most_common(1)[0][0]
-
-        for md5 in cluster:
-            md5_to_pred_label[md5] = cluster_label
+    Returns
+    -------
+    Tuple containing all scoring metrics
+    """
 
     y_true = list()
     y_pred = list()
 
-    for md5 in md5_to_pred_label.keys():
-        y_true.append(md5_to_avclass[md5])
-        y_pred.append(md5_to_pred_label[md5])
+    # Assign cluster label as most common AVClass labelling among prototypes in a cluster
+    for cluster_index in range(len(prototype_clusters)):
+        classes = [md5_to_avclass[md5] for md5 in prototype_clusters[cluster_index]]
 
+        class_count = Counter(classes)
+        cluster_label = class_count.most_common(1)[0][0]
+
+        # Assign predicted and true (AVClass) labels to each sample
+        for md5 in clusters[cluster_index]:
+            y_true.append(md5_to_avclass[md5])
+            y_pred.append(cluster_label)
+
+    # Score clustering
     precision, recall, fscore_macro, _ = precision_recall_fscore_support(y_true=y_true, y_pred=y_pred, average='macro')
     fscore_micro = f1_score(y_true=y_true, y_pred=y_pred, average='micro')
     fscore_weighted = f1_score(y_true=y_true, y_pred=y_pred, average='weighted')
     homogeneity, completeness, v_measure = homogeneity_completeness_v_measure(labels_true=y_true, labels_pred=y_pred)
+
+    return precision, recall, fscore_macro, fscore_micro, fscore_weighted, homogeneity, completeness, v_measure
 
 
 if __name__ == '__main__':
