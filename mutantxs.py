@@ -47,6 +47,9 @@ def main():
     lg.info('Scoring clustering...')
     precision, recall, fscore_macro, fscore_micro, fscore_weighted, homogeneity, completeness, v_measure = \
         score_clustering(md5_clusters, md5_prototype_clusters, md5_to_avclass)
+
+    lg.info('Creating signatures for each cluster...')
+    signatures = cluster_signatures(md5_to_ngrams, md5_clusters)
     lg.info('Done!')
 
 
@@ -391,7 +394,7 @@ def indices_to_md5s(prototype_clusters: list, prototypes_to_data_points: dict, m
         List of lists representing clustered prototypes
     prototypes_to_data_points: dict
         Dict mapping from each prototype to the data points within their cluster
-    md5s:
+    md5s: list
         List of all md5s
 
     Returns
@@ -423,12 +426,12 @@ def indices_to_md5s(prototype_clusters: list, prototypes_to_data_points: dict, m
     return md5_clusters, md5_prototype_clusters
 
 
-def score_clustering(clusters: list, prototype_clusters: list, md5_to_avclass: dict):
+def score_clustering(md5_clusters: list, prototype_clusters: list, md5_to_avclass: dict):
     """
     Scores clustering by various metrics (precision, recall, F-scores, homogeneity, completeness, V-Measure)
     Parameters
     ----------
-    clusters
+    md5_clusters: list
         List of lists of md5s, where each inner list represents a cluster
     prototype_clusters: list
         List of lists of md5s, where each inner list represents a cluster of prototypes
@@ -451,7 +454,7 @@ def score_clustering(clusters: list, prototype_clusters: list, md5_to_avclass: d
         cluster_label = class_count.most_common(1)[0][0]
 
         # Assign predicted and true (AVClass) labels to each sample
-        for md5 in clusters[cluster_index]:
+        for md5 in md5_clusters[cluster_index]:
             y_true.append(md5_to_avclass[md5])
             y_pred.append(cluster_label)
 
@@ -463,6 +466,33 @@ def score_clustering(clusters: list, prototype_clusters: list, md5_to_avclass: d
 
     return precision, recall, fscore_macro, fscore_micro, fscore_weighted, homogeneity, completeness, v_measure
 
+
+def cluster_signatures(md5_to_ngrams: dict, md5_clusters: list):
+    """
+    Creates cluster signatures based on shared N-grams between elements in a cluster
+    Parameters
+    ----------
+    md5_to_ngrams: dict
+        Mapping from md5s to N-grams
+    md5_clusters: list
+        List of lists
+
+    Returns
+    -------
+    List
+        List of signatures (N-grams) corresponding to each cluster
+    """
+
+    signatures = list()
+
+    # Create lists of common N-grams between each sample in a cluster, forming signatures
+    for cluster in md5_clusters:
+        ngrams = [md5_to_ngrams[md5] for md5 in cluster]
+
+        common_ngrams = list(set.intersection(*map(set, ngrams)))
+        signatures.append(common_ngrams)
+
+    return signatures
 
 if __name__ == '__main__':
     lg.basicConfig(
