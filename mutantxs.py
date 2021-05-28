@@ -4,20 +4,21 @@ This script contains method stubs to guide Noah's planned
 implementation of MutantX-S, which aims to be comparable
 against COUGAR.
 """
-import os.path
+
 import random
-from json import loads
+from json import loads, dump
 from sys import argv
 from collections import OrderedDict, Counter
 import logging as lg
 import csv
-import os
+from datetime import datetime
 
 import numpy as np
 from numpy import vstack
 from scipy.sparse import csr_matrix
 from sklearn.feature_extraction import FeatureHasher
-from sklearn.metrics import pairwise_distances, f1_score, homogeneity_completeness_v_measure, precision_recall_fscore_support
+from sklearn.metrics import pairwise_distances, f1_score, homogeneity_completeness_v_measure, \
+    precision_recall_fscore_support
 from sklearn.preprocessing import normalize
 from tqdm import tqdm
 
@@ -58,16 +59,18 @@ def main():
     clustered_prototypes = cluster_prototypes(feature_matrix, prototypes, d_min)
 
     lg.info('Converting indices back to MD5s...')
-    md5_clusters, md5_prototype_clusters = indices_to_md5s(clustered_prototypes, prototypes_to_data_points, list(md5_to_fvs.keys()))
+    md5_clusters, md5_prototype_clusters = indices_to_md5s(clustered_prototypes, prototypes_to_data_points,
+                                                           list(md5_to_fvs.keys()))
 
     lg.info('Scoring clustering...')
-    results = score_clustering(md5_clusters, md5_prototype_clusters, md5_to_avclass)
+    results, labels_accuracy = score_clustering(md5_clusters, md5_prototype_clusters, md5_to_avclass)
 
     lg.info('Creating signatures for each cluster...')
     signatures = cluster_signatures(int_to_ngram, md5_clusters, md5_to_fvs)
 
     lg.info('Log results...')
-    log_results(results, n, p_max, d_min)
+    log_results(results, n, p_max, d_min, md5_clusters, md5_prototype_clusters, md5_to_avclass, signatures,
+                labels_accuracy)
     lg.info('Done!')
 
 
@@ -161,7 +164,7 @@ def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: in
         md5_to_ngrams[md5] = list()
 
         for index in range(import_index, import_index + int(num_imports) - n + 1):
-            ngram = tuple([record[2].lower() + "," + record[1].lower() for record in record_list[index:index + n]])
+            ngram = tuple([record[1].lower() + "," + record[2].lower() for record in record_list[index:index + n]])
 
             md5_to_ngrams[md5].append(ngram)
 
@@ -239,7 +242,7 @@ def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
     """
 
     # Hash each feature vector to a smaller dimension using the sklearn feature hasher
-    h = FeatureHasher(2**12, input_type="string", alternate_sign=False)
+    h = FeatureHasher(2 ** 12, input_type="string", alternate_sign=False)
 
     fv_matrix = list()
 
@@ -282,7 +285,8 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float) -> tuple:
     prototypes_to_data_points[prototypes[0]] = data_points
 
     # Find next prototype using largest distance
-    prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(prototypes[0]), feature_matrix), norm="max")
+    prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(prototypes[0]), feature_matrix),
+                                    norm="max")
     next_potential_prototype = np.argmax(prototype_distances)
     max_dist = np.max(prototype_distances)
 
@@ -290,7 +294,8 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float) -> tuple:
     while max_dist > Pmax and len(prototypes) < feature_matrix.get_shape()[0]:
         new_prototype = next_potential_prototype
 
-        new_prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(new_prototype), feature_matrix), norm="max")
+        new_prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(new_prototype), feature_matrix),
+                                            norm="max")
         prototype_distances = vstack((prototype_distances, new_prototype_distances))
 
         new_prototype_data_points = list()
@@ -425,6 +430,7 @@ def indices_to_md5s(prototype_clusters: list, prototypes_to_data_points: dict, m
     md5_prototype_clusters = list()
     current_prototype_cluster = list()
 
+    # Convert clusters from indices to md5s
     for cluster in prototype_clusters:
         for prototype in cluster:
             current_cluster.append(md5s[prototype])
@@ -462,6 +468,8 @@ def score_clustering(md5_clusters: list, prototype_clusters: list, md5_to_avclas
     y_true = list()
     y_pred = list()
 
+    labels_accuracy = list()
+
     # Assign cluster label as most common AVClass labelling among prototypes in a cluster
     for cluster_index in range(len(prototype_clusters)):
         classes = [md5_to_avclass[md5] for md5 in prototype_clusters[cluster_index]]
@@ -469,10 +477,19 @@ def score_clustering(md5_clusters: list, prototype_clusters: list, md5_to_avclas
         class_count = Counter(classes)
         cluster_label = class_count.most_common(1)[0][0]
 
+        correct_classifications = 0
+
         # Assign predicted and true (AVClass) labels to each sample
         for md5 in md5_clusters[cluster_index]:
             y_true.append(md5_to_avclass[md5])
             y_pred.append(cluster_label)
+
+            if md5_to_avclass[md5] == cluster_label:
+                correct_classifications += 1
+
+        # Calculate how many samples in the cluster were accurately labeled
+        accuracy = round(correct_classifications / len(md5_clusters[cluster_index]), 4) * 100
+        labels_accuracy.append((cluster_label, accuracy))
 
     # Score clustering
     precision, recall, fscore_macro, _ = precision_recall_fscore_support(y_true=y_true, y_pred=y_pred, average='macro')
@@ -480,7 +497,8 @@ def score_clustering(md5_clusters: list, prototype_clusters: list, md5_to_avclas
     fscore_weighted = f1_score(y_true=y_true, y_pred=y_pred, average='weighted')
     homogeneity, completeness, v_measure = homogeneity_completeness_v_measure(labels_true=y_true, labels_pred=y_pred)
 
-    return [precision, recall, fscore_macro, fscore_micro, fscore_weighted, homogeneity, completeness, v_measure]
+    return [precision, recall, fscore_macro, fscore_micro, fscore_weighted, homogeneity, completeness, v_measure], \
+        labels_accuracy
 
 
 def cluster_signatures(int_to_ngram: dict, md5_clusters: list, md5_to_fvs: dict):
@@ -491,7 +509,7 @@ def cluster_signatures(int_to_ngram: dict, md5_clusters: list, md5_to_fvs: dict)
     int_to_ngram: dict
         Integer encoding for each N-gram corresponding to index in feature vector
     md5_clusters: list
-        List of lists
+        List of lists of md5s, where each inner list represents a cluster
     md5_to_fvs: dict
         Mapping from md5s to feature vectors
 
@@ -504,6 +522,7 @@ def cluster_signatures(int_to_ngram: dict, md5_clusters: list, md5_to_fvs: dict)
     signatures = list()
     features = list()
 
+    # Create signatures representing each cluster
     for cluster in tqdm(md5_clusters, desc="CreatingSignatures"):
 
         for md5 in cluster:
@@ -524,7 +543,8 @@ def cluster_signatures(int_to_ngram: dict, md5_clusters: list, md5_to_fvs: dict)
     return signatures
 
 
-def log_results(results: list, n: int, p_max: float, d_min: float):
+def log_results(results: list, n: int, p_max: float, d_min: float, md5_clusters: list, md5_prototype_clusters: list,
+                md5_to_avclass: dict, signatures: list, labels_accuracy: list):
     """
     Log results into a CSV file
     Parameters
@@ -537,26 +557,64 @@ def log_results(results: list, n: int, p_max: float, d_min: float):
         Distance threshold for prototype selection
     d_min: float
         Distance threshold for prototype clustering
+    md5_to_avclass: dict
+        Mapping from md5 to respective AVClass label
+    md5_clusters: list
+        List of lists of md5s, where each inner list represents a cluster
+    md5_prototype_clusters: list
+        List of lists of md5s, where each inner list represents a cluster of prototypes
+    signatures: list
+        List of signatures corresponding to each cluster
+    labels_accuracy: list
+        List of labels predicted for each cluster, along with % accuracy of that labeling
     """
 
-    file_name = "results.csv"
+    date_time = datetime.now().strftime('%b-%d-%Y-%H-%M')
+    csv_file_name = "mutantxs_results_{}_{}_{}_{}.csv".format(n, p_max, d_min, date_time)
 
-    info = [n, p_max, d_min]
+    json_file_name = "mutantxs_results_{}_{}_{}_{}.json".format(n, p_max, d_min, date_time)
 
-    info.extend(results)
+    fields = ['precision', 'recall', 'fscore_macro', 'fscore_micro', 'fscore_weighted',
+              'homogeneity', 'completeness', 'v_measure']
 
-    if os.path.isfile('./results.csv'):
-        with open(file_name, 'a') as res_file:
-            csv_writer = csv.writer(res_file)
-            csv_writer.writerow(info)
-    else:
-        fields = ['N', 'P_max', 'D_min', 'precision', 'recall', 'fscore_macro', 'fscore_micro', 'fscore_weighted',
-                  'homogeneity', 'completeness', 'v_measure']
-        with open(file_name, 'w') as res_file:
-            csv_writer = csv.writer(res_file)
+    # Log numerical results to a CSV file
+    with open(csv_file_name, 'w') as res_file:
+        csv_writer = csv.writer(res_file)
 
-            csv_writer.writerow(fields)
-            csv_writer.writerow(info)
+        csv_writer.writerow(fields)
+        csv_writer.writerow(results)
+
+    clusters_info = list()
+    cluster_count = 0
+
+    # Log clustering results to JSON file
+    for cluster_index in range(len(md5_clusters)):
+        cluster = md5_clusters[cluster_index]
+
+        cluster_info = {
+            "cluster_number": cluster_count,
+            "sample_count": len(cluster),
+            "assigned_avclass": [
+                labels_accuracy[cluster_index][0],
+                labels_accuracy[cluster_index][1]
+            ],
+            "md5s": [[md5, md5_to_avclass[md5]] for md5 in cluster],
+            "prototypes": [[md5, md5_to_avclass[md5]] for md5 in md5_prototype_clusters[cluster_index]],
+            "signature": [ngram for ngram in signatures[cluster_index]]
+        }
+
+        cluster_count += 1
+        clusters_info.append(cluster_info)
+
+    dict_results = {
+        "feature_set": "Ember",
+        "num_signatures": len(md5_clusters),
+        "compilation date": date_time,
+        "clusters": clusters_info
+    }
+
+    with open(json_file_name, 'w') as json_file:
+        dump(dict_results, json_file, indent=2)
 
 
 if __name__ == '__main__':
