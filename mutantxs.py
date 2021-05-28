@@ -49,7 +49,7 @@ def main():
         score_clustering(md5_clusters, md5_prototype_clusters, md5_to_avclass)
 
     lg.info('Creating signatures for each cluster...')
-    signatures = cluster_signatures(md5_to_ngrams, md5_clusters)
+    signatures = cluster_signatures(int_to_ngram, md5_clusters, md5_to_fvs)
     lg.info('Done!')
 
 
@@ -96,15 +96,19 @@ def open_ember_files(file_names: list = None) -> tuple:
 
                     imports = json_doc['imports']
                     avclass = json_doc['avclass']
+                    one_sample_records = list()
 
                     count = 0
                     for library in imports:
                         for function in imports[library]:
                             count += 1
-                            record_list.append((md5, library, function))
+                            one_sample_records.append((md5, library, function))
 
-                    info_list.append((md5, str(count)))
-                    md5_to_avclass[md5] = avclass
+                    if count >= 4:
+                        info_list.append((md5, str(count)))
+                        record_list.extend(one_sample_records.copy())
+                        one_sample_records.clear()
+                        md5_to_avclass[md5] = avclass
 
     return info_list, record_list, md5_to_avclass
 
@@ -339,15 +343,9 @@ def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float
     # Initialize clusters as singleton clusters for each prototype
     clusters = [[prototype] for prototype in prototypes]
 
-    # Construct a distance matrix between prototypes
-    prototype_to_prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(prototypes[0]), feature_matrix), norm="max")
+    feature_matrix = feature_matrix[prototypes]
 
-    for prototype in prototypes[1:]:
-        prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(prototype), feature_matrix), norm="max")
-        prototype_to_prototype_distances = vstack((prototype_to_prototype_distances, prototype_distances))
-
-    non_prototype_indices = [index for index in range(len(prototype_to_prototype_distances[0])) if index not in prototypes]
-    prototype_to_prototype_distances = np.delete(prototype_to_prototype_distances, non_prototype_indices, axis=1)
+    prototype_to_prototype_distances = normalize(pairwise_distances(feature_matrix, feature_matrix), norm="max")
 
     # Assign all zero distances (prototypes' distances to themselves) from the distance matrix to 2
     # where 2 is an arbitrary number > MinD
@@ -467,15 +465,17 @@ def score_clustering(md5_clusters: list, prototype_clusters: list, md5_to_avclas
     return precision, recall, fscore_macro, fscore_micro, fscore_weighted, homogeneity, completeness, v_measure
 
 
-def cluster_signatures(md5_to_ngrams: dict, md5_clusters: list):
+def cluster_signatures(int_to_ngram: dict, md5_clusters: list, md5_to_fvs: dict):
     """
     Creates cluster signatures based on shared N-grams between elements in a cluster
     Parameters
     ----------
-    md5_to_ngrams: dict
-        Mapping from md5s to N-grams
+    int_to_ngram: dict
+        Integer encoding for each N-gram corresponding to index in feature vector
     md5_clusters: list
         List of lists
+    md5_to_fvs: dict
+        Mapping from md5s to feature vectors
 
     Returns
     -------
@@ -484,15 +484,27 @@ def cluster_signatures(md5_to_ngrams: dict, md5_clusters: list):
     """
 
     signatures = list()
+    features = list()
 
-    # Create lists of common N-grams between each sample in a cluster, forming signatures
     for cluster in md5_clusters:
-        ngrams = [md5_to_ngrams[md5] for md5 in cluster]
 
-        common_ngrams = list(set.intersection(*map(set, ngrams)))
-        signatures.append(common_ngrams)
+        for md5 in cluster:
+            features.extend([index for index in range(len(md5_to_fvs[md5])) if md5_to_fvs[md5][index] > 0])
+
+        counter = Counter(features)
+
+        if len(counter) >= 7:
+            common_ngrams = counter.most_common(7)
+            signature = [int_to_ngram[ngram[0]] for ngram in common_ngrams]
+        else:
+            signature = [int_to_ngram[ngram[0]] for ngram in counter]
+
+        signatures.append(signature)
+
+        features.clear()
 
     return signatures
+
 
 if __name__ == '__main__':
     lg.basicConfig(
