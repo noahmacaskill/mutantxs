@@ -4,11 +4,14 @@ This script contains method stubs to guide Noah's planned
 implementation of MutantX-S, which aims to be comparable
 against COUGAR.
 """
+import os.path
 import random
 from json import loads
 from sys import argv
 from collections import OrderedDict, Counter
 import logging as lg
+import csv
+import os
 
 import numpy as np
 from numpy import vstack
@@ -20,14 +23,21 @@ from tqdm import tqdm
 
 
 def main():
-    file_names = None
+    file_names = n = p_max = d_min = None
+
     if len(argv) > 1:
-        file_names = argv[1:]
+        n = int(argv[1])
+        p_max = float(argv[2])
+        d_min = float(argv[3])
+        file_names = argv[4:]
 
     info_list, record_list, md5_to_avclass = open_ember_files(file_names)
 
+    if n is None:
+        n = int(input("Select size of N-grams"))
+
     lg.info('Loaded records from {} samples, converting to N-Grams...'.format(len(info_list)))
-    md5_to_ngrams = convert_function_imports_to_ngrams(info_list, record_list)
+    md5_to_ngrams = convert_function_imports_to_ngrams(info_list, record_list, n)
 
     lg.info('Converting to feature vectors...')
     md5_to_fvs, int_to_ngram = create_feature_vectors_from_ngrams(md5_to_ngrams)
@@ -35,21 +45,29 @@ def main():
     lg.info('Hashing feature vectors...')
     feature_matrix = reduce_dimensions_hashing_trick(md5_to_fvs)
 
+    if p_max is None:
+        p_max = float(input("Select p_max"))
+
     lg.info('Selecting prototypes...')
-    prototypes, prototypes_to_data_points = select_prototypes(feature_matrix)
+    prototypes, prototypes_to_data_points = select_prototypes(feature_matrix, p_max)
+
+    if d_min is None:
+        d_min = float(input("Select d_min"))
 
     lg.info('Clustering {} prototypes...'.format(len(prototypes)))
-    clustered_prototypes = cluster_prototypes(feature_matrix, prototypes)
+    clustered_prototypes = cluster_prototypes(feature_matrix, prototypes, d_min)
 
     lg.info('Converting indices back to MD5s...')
     md5_clusters, md5_prototype_clusters = indices_to_md5s(clustered_prototypes, prototypes_to_data_points, list(md5_to_fvs.keys()))
 
     lg.info('Scoring clustering...')
-    precision, recall, fscore_macro, fscore_micro, fscore_weighted, homogeneity, completeness, v_measure = \
-        score_clustering(md5_clusters, md5_prototype_clusters, md5_to_avclass)
+    results = score_clustering(md5_clusters, md5_prototype_clusters, md5_to_avclass)
 
     lg.info('Creating signatures for each cluster...')
     signatures = cluster_signatures(int_to_ngram, md5_clusters, md5_to_fvs)
+
+    lg.info('Log results...')
+    log_results(results, n, p_max, d_min)
     lg.info('Done!')
 
 
@@ -113,7 +131,7 @@ def open_ember_files(file_names: list = None) -> tuple:
     return info_list, record_list, md5_to_avclass
 
 
-def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: int = 4) -> dict:
+def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: int) -> dict:
     """Converts functions imported by malware samples to N-grams
     representing potential behaviours of those samples.
 
@@ -125,8 +143,8 @@ def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: in
     record_list : list
         A list containing a variable number of tuples per malware
         sample, where tuples are of the form: (MD5, library, function)
-    n : int, optional
-        The window size for the N-grams, default 4 (from paper)
+    n : int
+        The window size for the N-grams
 
     Returns
     -------
@@ -235,7 +253,7 @@ def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
     return hashed_matrix
 
 
-def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4) -> tuple:
+def select_prototypes(feature_matrix: csr_matrix, Pmax: float) -> tuple:
     """Select prototypes from the matrix of hashed feature vectors.
     The referenced algorithm for selecting in approximately linear time:
     http://www.cs.columbia.edu/~verma/classes/uml/ref/clustering_minimize_intercluster_distance_gonzalez.pdf
@@ -319,7 +337,7 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float = 0.4) -> tuple:
     return prototypes, prototypes_to_data_points
 
 
-def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float = 0.5) -> list:
+def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float) -> list:
     """
     Clusters prototypes together such that no two prototypes are within a certain threshold of one another
     Parameters
@@ -462,7 +480,7 @@ def score_clustering(md5_clusters: list, prototype_clusters: list, md5_to_avclas
     fscore_weighted = f1_score(y_true=y_true, y_pred=y_pred, average='weighted')
     homogeneity, completeness, v_measure = homogeneity_completeness_v_measure(labels_true=y_true, labels_pred=y_pred)
 
-    return precision, recall, fscore_macro, fscore_micro, fscore_weighted, homogeneity, completeness, v_measure
+    return [precision, recall, fscore_macro, fscore_micro, fscore_weighted, homogeneity, completeness, v_measure]
 
 
 def cluster_signatures(int_to_ngram: dict, md5_clusters: list, md5_to_fvs: dict):
@@ -486,7 +504,7 @@ def cluster_signatures(int_to_ngram: dict, md5_clusters: list, md5_to_fvs: dict)
     signatures = list()
     features = list()
 
-    for cluster in md5_clusters:
+    for cluster in tqdm(md5_clusters, desc="CreatingSignatures"):
 
         for md5 in cluster:
             features.extend([index for index in range(len(md5_to_fvs[md5])) if md5_to_fvs[md5][index] > 0])
@@ -504,6 +522,41 @@ def cluster_signatures(int_to_ngram: dict, md5_clusters: list, md5_to_fvs: dict)
         features.clear()
 
     return signatures
+
+
+def log_results(results: list, n: int, p_max: float, d_min: float):
+    """
+    Log results into a CSV file
+    Parameters
+    ----------
+    results: list
+        List containing results to be logged
+    n: int
+        N-gram size
+    p_max: float
+        Distance threshold for prototype selection
+    d_min: float
+        Distance threshold for prototype clustering
+    """
+
+    file_name = "results.csv"
+
+    info = [n, p_max, d_min]
+
+    info.extend(results)
+
+    if os.path.isfile('./results.csv'):
+        with open(file_name, 'a') as res_file:
+            csv_writer = csv.writer(res_file)
+            csv_writer.writerow(info)
+    else:
+        fields = ['N', 'P_max', 'D_min', 'precision', 'recall', 'fscore_macro', 'fscore_micro', 'fscore_weighted',
+                  'homogeneity', 'completeness', 'v_measure']
+        with open(file_name, 'w') as res_file:
+            csv_writer = csv.writer(res_file)
+
+            csv_writer.writerow(fields)
+            csv_writer.writerow(info)
 
 
 if __name__ == '__main__':
