@@ -121,7 +121,7 @@ def open_ember_files(file_names: list = None) -> tuple:
 
                     count = 0
                     for library in imports:
-                        for function in imports[library]:
+                        for function in filter(None, imports[library]):
                             count += 1
                             one_sample_records.append((md5, library, function))
 
