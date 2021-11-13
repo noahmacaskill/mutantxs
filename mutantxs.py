@@ -1,8 +1,8 @@
-"""MutantX-S Implementation for EMBER Function Imports
+"""
+MutantX-S Implementation for EMBER Function Imports
+This work is our rendition of MutantX-S, a static malware classification system.
 
-This script contains method stubs to guide Noah's planned
-implementation of MutantX-S, which aims to be comparable
-against COUGAR.
+@Authors: Noah MacAskill and Zachary Wilkins
 """
 
 import random
@@ -24,59 +24,89 @@ from tqdm import tqdm
 
 
 def main():
+
     file_names = n = p_max = d_min = None
 
+    # Store parameters if given via command line
     if len(argv) > 1:
         n = int(argv[1])
         p_max = float(argv[2])
         d_min = float(argv[3])
         file_names = argv[4:]
 
+    # Import required information from EMBER
     info_list, record_list, md5_to_avclass = open_ember_files(file_names)
 
+    # Receive n from user if not given
     if n is None:
         n = int(input("Select size of N-grams"))
 
     lg.info('Loaded records from {} samples, converting to N-Grams...'.format(len(info_list)))
+
+    # Convert function import info into N-grams
     md5_to_ngrams = convert_function_imports_to_ngrams(info_list, record_list, n)
 
     lg.info('Converting to feature vectors...')
+
+    # Convert N-grams into feature vectors
     md5_to_fvs, int_to_ngram = create_feature_vectors_from_ngrams(md5_to_ngrams)
 
     lg.info('Hashing feature vectors...')
+
+    # Reduce the dimensions of the feature vectors using the feature hashing trick
     feature_matrix = reduce_dimensions_hashing_trick(md5_to_fvs)
 
+    # Retrieve p_max from user if not given
     if p_max is None:
         p_max = float(input("Select p_max"))
 
     lg.info('Selecting prototypes...')
+
+    # Select a group of prototypes from the samples
     prototypes, prototypes_to_data_points = select_prototypes(feature_matrix, p_max)
 
+    # Retrieve d_min from user if not given
     if d_min is None:
         d_min = float(input("Select d_min"))
 
     lg.info('Clustering {} prototypes...'.format(len(prototypes)))
+
+    # Cluster the prototypes
     clustered_prototypes = cluster_prototypes(feature_matrix, prototypes, d_min)
 
     lg.info('Converting indices back to MD5s...')
+
+    # Creates the final clusters of md5s
     md5_clusters, md5_prototype_clusters = indices_to_md5s(clustered_prototypes, prototypes_to_data_points,
                                                            list(md5_to_fvs.keys()))
 
     lg.info('Scoring clustering...')
+
+    # Score the clustering
     results, labels_accuracy = score_clustering(md5_clusters, md5_prototype_clusters, md5_to_avclass)
 
     lg.info('Creating signatures for each cluster...')
+
+    # Create signatures for each cluster
     signatures = cluster_signatures(int_to_ngram, md5_clusters, md5_to_fvs)
 
     lg.info('Log results...')
+
+    # Log the final results
     log_results(results, n, p_max, d_min, md5_clusters, md5_prototype_clusters, md5_to_avclass, signatures,
                 labels_accuracy)
+
     lg.info('Done!')
 
 
 def open_ember_files(file_names: list = None) -> tuple:
     """
     Import required information from EMBER data
+
+    Parameters
+    ----------
+    file_names : list
+        A list of files to search through for the malware samples to be clustered
 
     Returns
     -------
@@ -85,9 +115,11 @@ def open_ember_files(file_names: list = None) -> tuple:
         list of information on each function imports
     """
 
+    # Open list of md5s representing the samples to be clustered
     md5_file = open("10K.md5", 'r')
     md5s = list()
 
+    # Read in each md5
     for line in md5_file:
         md5s.append(line[:-1])
 
@@ -97,6 +129,7 @@ def open_ember_files(file_names: list = None) -> tuple:
     record_list = list()
     md5_to_avclass = dict()
 
+    # Retrieve file names from user if not given
     if file_names is None:
         file_names = input("Select file names separated by spaces: ")
         file_names = file_names.split()
@@ -107,14 +140,14 @@ def open_ember_files(file_names: list = None) -> tuple:
         lg.info('Loading records from file: {}'.format(file_name))
         with open(file_name, 'r') as f:
 
-            # Import required information from each malware sample (lind of file)
+            # Import required information from each malware sample (line of file)
             for line in f:
                 json_doc = loads(line)
 
                 md5 = json_doc['md5']
 
+                # If one of the md5s we're searching for is found, store its information
                 if md5 in md5s:
-
                     imports = json_doc['imports']
                     avclass = json_doc['avclass']
                     one_sample_records = list()
@@ -174,9 +207,9 @@ def convert_function_imports_to_ngrams(info_list: list, record_list: list, n: in
 
 
 def create_feature_vectors_from_ngrams(sample_to_ngrams: dict) -> tuple:
-    """Create feature vectors for each document, where an integer
+    """Create feature vectors for each malware sample, where an integer
     in the vector represents the presence of a corresponding N-gram in
-    that document (malware sample).
+    that sample.
 
     Parameters
     ----------
@@ -215,17 +248,8 @@ def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
     """Reduce dimensions to a vector of a fixed-length by
     applying the hashing trick.
 
-    Look at this class for help:
+    The scikit-learn feature hasher was employed here:
     https://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.FeatureHasher.html
-    The input_type should be 'string', and we will need to join the
-    n-gram tuples into a string in a consistent manner so that they
-    can be hashed.
-
-    As well, per the MutantX-S paper: "In case of a collision where
-    two or more N-grams map to the same position, the sum of their
-    counts is used as the value in the new vector."
-    As a result, we probably want to set alternate_sign=False, so
-    that we accumulate error rather than cancelling it.
 
     Parameters
     ----------
@@ -234,44 +258,43 @@ def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
 
     Returns
     -------
-    X : sparse matrix of shape (n_samples, n_features)
-        Feature matrix from hashed n-grams. We may densify this,
-        depending on the memory requirements and ability to calculate
-        Euclidean distance on sparse vectors.
-        https://scikit-learn.org/stable/modules/generated/sklearn.metrics.pairwise_distances.html
+    sparse matrix of shape (n_samples, n_features)
+        Feature matrix from hashed n-grams.
     """
 
-    # Hash each feature vector to a smaller dimension using the sklearn feature hasher
+    # https://scikit-learn.org/stable/modules/generated/sklearn.metrics.pairwise_distances.html
+
+    # Create a feature hasher
     h = FeatureHasher(2 ** 12, input_type="string", alternate_sign=False)
 
     fv_matrix = list()
 
+    # For each sample, identify the indices relating to the n-grams that sample contains
+    # Store the information in a feature value matrix
     for fv in tqdm(md5_vector_mapping.values(), desc='BuildStrFVs'):
         indices = [str(i) for i in range(len(fv)) if fv[i] > 0]
 
         fv_matrix.append(indices)
 
+    # Hash the results to a smaller matrix using the feature hasher
     hashed_matrix = h.transform(fv_matrix)
 
     return hashed_matrix
 
 
-def select_prototypes(feature_matrix: csr_matrix, Pmax: float) -> tuple:
+def select_prototypes(feature_matrix: csr_matrix, p_max: float) -> tuple:
     """Select prototypes from the matrix of hashed feature vectors.
-    The referenced algorithm for selecting in approximately linear time:
-    http://www.cs.columbia.edu/~verma/classes/uml/ref/clustering_minimize_intercluster_distance_gonzalez.pdf
 
     Parameters
     ----------
-    X : sparse matrix of shape (n_samples, n_features)
+    feature_matrix : sparse matrix of shape (n_samples, n_features)
         Feature matrix from hashed n-grams
-    Pmax : float
+    p_max : float
         "Threshold for distances from data points to their nearest prototypes"
-        default 0.4 (from paper)
 
     Returns
     -------
-    (list (?), dict)
+    (list, dict)
         List of selected prototypes. Perhaps we want to keep using a subset of the sparse matrix though?
         Mapping of prototypes to datapoints
     """
@@ -284,14 +307,14 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float) -> tuple:
     data_points = [data_point for data_point in range(feature_matrix.get_shape()[0]) if data_point != prototypes[0]]
     prototypes_to_data_points[prototypes[0]] = data_points
 
-    # Find next prototype using largest distance
+    # Find next prototype using the largest distance
     prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(prototypes[0]), feature_matrix),
                                     norm="max")
     next_potential_prototype = np.argmax(prototype_distances)
     max_dist = np.max(prototype_distances)
 
     # Find new prototypes until all data points are within radius Pmax of a prototype
-    while max_dist > Pmax and len(prototypes) < feature_matrix.get_shape()[0]:
+    while max_dist > p_max and len(prototypes) < feature_matrix.get_shape()[0]:
         new_prototype = next_potential_prototype
 
         new_prototype_distances = normalize(pairwise_distances(feature_matrix.getrow(new_prototype), feature_matrix),
@@ -301,11 +324,11 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float) -> tuple:
         new_prototype_data_points = list()
         data_points_to_remove = list()
 
+        max_dist = 0
+
         # For each datapoint, determine whether it needs to be shifted to the new prototype, while also
         # keeping track of that max distance between data points and their closest prototypes to determine
         # the next potential prototype
-        max_dist = 0
-
         for prototype_index in range(len(prototypes)):
 
             prototype = prototypes[prototype_index]
@@ -342,7 +365,7 @@ def select_prototypes(feature_matrix: csr_matrix, Pmax: float) -> tuple:
     return prototypes, prototypes_to_data_points
 
 
-def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float) -> list:
+def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, min_d: float) -> list:
     """
     Clusters prototypes together such that no two prototypes are within a certain threshold of one another
     Parameters
@@ -351,7 +374,7 @@ def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float
         Feature matrix from hashed n-grams
     prototypes: list
         List of prototype row indices in the feature matrix
-    MinD: float
+    min_d: float
         Distance threshold for minimum distance between prototypes of a cluster
 
     Returns
@@ -366,8 +389,8 @@ def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float
     # Initialize clusters as singleton clusters for each prototype
     clusters = [[prototype] for prototype in prototypes]
 
+    # Compute distances between each of the prototypes
     feature_matrix = feature_matrix[prototypes]
-
     prototype_to_prototype_distances = normalize(pairwise_distances(feature_matrix, feature_matrix), norm="max")
 
     # Assign all zero distances (prototypes' distances to themselves) from the distance matrix to 2
@@ -377,8 +400,8 @@ def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float
     # Compute minimum distance between two prototypes
     min_dist = prototype_to_prototype_distances.min()
 
-    # Find clusters until the minimum distance between closest clusters is >= MinD
-    while min_dist < MinD:
+    # Combine clusters until the minimum distance between closest clusters is >= MinD
+    while min_dist < min_d:
         indices = np.where(prototype_to_prototype_distances == min_dist)
         prototype1 = indices[0][0]
         prototype2 = indices[1][0]
@@ -401,6 +424,7 @@ def cluster_prototypes(feature_matrix: csr_matrix, prototypes: list, MinD: float
         prototype_to_prototype_distances[prototype1][prototype2] = 2
         prototype_to_prototype_distances[prototype2][prototype1] = 2
 
+        # Compute the new minimum distance between clusters
         min_dist = prototype_to_prototype_distances.min()
 
     return clusters
@@ -470,16 +494,18 @@ def score_clustering(md5_clusters: list, prototype_clusters: list, md5_to_avclas
 
     labels_accuracy = list()
 
-    # Assign cluster label as most common AVClass labelling among prototypes in a cluster
+    # Assign cluster label for each cluster as most common AVClass labelling among prototypes in a cluster
     for cluster_index in range(len(prototype_clusters)):
+        # Extract each AVClass label from this cluster
         classes = [md5_to_avclass[md5] for md5 in prototype_clusters[cluster_index]]
 
+        # Assign the most common AVClass label as the cluster label
         class_count = Counter(classes)
         cluster_label = class_count.most_common(1)[0][0]
 
         correct_classifications = 0
 
-        # Assign predicted and true (AVClass) labels to each sample
+        # Assign predicted and true AVClass labels to each sample
         for md5 in md5_clusters[cluster_index]:
             y_true.append(md5_to_avclass[md5])
             y_pred.append(cluster_label)
@@ -525,11 +551,14 @@ def cluster_signatures(int_to_ngram: dict, md5_clusters: list, md5_to_fvs: dict)
     # Create signatures representing each cluster
     for cluster in tqdm(md5_clusters, desc="CreatingSignatures"):
 
+        # Retrieve all the N-grams from this cluster (in the form of indices)
         for md5 in cluster:
             features.extend([index for index in range(len(md5_to_fvs[md5])) if md5_to_fvs[md5][index] > 0])
 
         counter = Counter(features)
 
+        # Set the signature as the 7 most common N-grams in the cluster
+        # (or all N-grams if there are less than 7)
         if len(counter) >= 7:
             common_ngrams = counter.most_common(7)
             signature = [int_to_ngram[ngram[0]] for ngram in common_ngrams]
