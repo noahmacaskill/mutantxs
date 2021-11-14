@@ -25,21 +25,30 @@ from tqdm import tqdm
 
 def main():
 
-    file_names = n = p_max = d_min = None
+    file_names = md5_file = n = p_max = d_min = None
 
     # Store parameters if given via command line
     if len(argv) > 1:
         n = int(argv[1])
         p_max = float(argv[2])
         d_min = float(argv[3])
-        file_names = argv[4:]
-
-    # Import required information from EMBER
-    info_list, record_list, md5_to_avclass = open_ember_files(file_names)
+        md5_file = argv[4]
+        file_names = argv[5:]
 
     # Receive n from user if not given
     if n is None:
-        n = int(input("Select size of N-grams"))
+        n = int(input("Select size of N-grams: "))
+
+    # Retrieve p_max from user if not given
+    if p_max is None:
+        p_max = float(input("Select p_max: "))
+
+    # Retrieve d_min from user if not given
+    if d_min is None:
+        d_min = float(input("Select d_min: "))
+
+    # Import required information from EMBER
+    info_list, record_list, md5_to_avclass = open_ember_files(md5_file, file_names)
 
     lg.info('Loaded records from {} samples, converting to N-Grams...'.format(len(info_list)))
 
@@ -56,18 +65,10 @@ def main():
     # Reduce the dimensions of the feature vectors using the feature hashing trick
     feature_matrix = reduce_dimensions_hashing_trick(md5_to_fvs)
 
-    # Retrieve p_max from user if not given
-    if p_max is None:
-        p_max = float(input("Select p_max"))
-
     lg.info('Selecting prototypes...')
 
     # Select a group of prototypes from the samples
     prototypes, prototypes_to_data_points = select_prototypes(feature_matrix, p_max)
-
-    # Retrieve d_min from user if not given
-    if d_min is None:
-        d_min = float(input("Select d_min"))
 
     lg.info('Clustering {} prototypes...'.format(len(prototypes)))
 
@@ -99,12 +100,14 @@ def main():
     lg.info('Done!')
 
 
-def open_ember_files(file_names: list = None) -> tuple:
+def open_ember_files(md5_file_name, file_names: list = None) -> tuple:
     """
     Import required information from EMBER data
 
     Parameters
     ----------
+    md5_file_name:
+        The name of the file containing the samples (MD5s) to be clustered
     file_names : list
         A list of files to search through for the malware samples to be clustered
 
@@ -115,8 +118,11 @@ def open_ember_files(file_names: list = None) -> tuple:
         list of information on each function imports
     """
 
+    if md5_file_name is None:
+        md5_file_name = input("Select MD5 file: ")
+
     # Open list of md5s representing the samples to be clustered
-    md5_file = open("10K.md5", 'r')
+    md5_file = open(md5_file_name, 'r')
     md5s = list()
 
     # Read in each md5
@@ -261,8 +267,6 @@ def reduce_dimensions_hashing_trick(md5_vector_mapping: dict) -> csr_matrix:
     sparse matrix of shape (n_samples, n_features)
         Feature matrix from hashed n-grams.
     """
-
-    # https://scikit-learn.org/stable/modules/generated/sklearn.metrics.pairwise_distances.html
 
     # Create a feature hasher
     h = FeatureHasher(2 ** 12, input_type="string", alternate_sign=False)
