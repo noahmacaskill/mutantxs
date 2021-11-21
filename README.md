@@ -13,6 +13,12 @@ The goal of this work is to allow for benchmarking between malware classifiers. 
 dataset. For our rendition, the open source [EMBER](https://github.com/endgameinc/ember) dataset was used, with function imports being used as features, using an open-source 
 dataset ensures that any experiments done on the system are reproducible.
 
+We used this work as a benchmark for our malware clustering system [COUGAR](https://github.com/znwilkins/cougar). Results from that comparison can be found in the following
+paper (awaiting publication):
+
+* N. MacAskill, Z. Wilkins, and N. Zincir-Heywood. 2021. (in press). Scaling Multi-Objective Optimization for Clustering Malware. IEEE Symposium Series on Computational 
+Intelligence ([SSCI '21](https://attend.ieee.org/ssci-2021/))
+
 ## Usage
 
 To get the system up and running, JSON files of malware data must first be downloaded from [EMBER](https://github.com/endgameinc/ember). Each sample from these files will contain a
