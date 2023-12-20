@@ -14,10 +14,9 @@ dataset. For our rendition, the open source [EMBER](https://github.com/endgamein
 dataset ensures that any experiments done on the system are reproducible.
 
 We used this work as a benchmark for our malware clustering system [COUGAR](https://github.com/znwilkins/cougar). Results from that comparison can be found in the following
-paper (awaiting publication):
+paper:
 
-* N. MacAskill, Z. Wilkins, and N. Zincir-Heywood. 2021. (in press). Scaling Multi-Objective Optimization for Clustering Malware. IEEE Symposium Series on Computational 
-Intelligence ([SSCI '21](https://attend.ieee.org/ssci-2021/))
+* N. MacAskill, Z. Wilkins and N. Zincir-Heywood, "Scaling Multi-Objective Optimization for Clustering Malware," 2021 IEEE Symposium Series on Computational Intelligence (SSCI), Orlando, FL, USA, 2021, pp. 1-8, doi: 10.1109/SSCI50451.2021.9659925.
 
 ## Usage
 
